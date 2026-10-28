@@ -1,43 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { shopData } from '../data/shopData';
-import { getShopProducts } from '../utils/dataService';
 import CtaBanner from '../components/CtaBanner';
 
 export default function ShopPage({ onOpenConsultation, onNavigate }) {
-  const { header, categories, products: defaultProducts } = shopData;
-  const [products, setProducts] = useState(defaultProducts);
+  const { header, categories, products } = shopData;
   const [activeCategory, setActiveCategory] = useState('All collections');
 
-  useEffect(() => {
-    let mounted = true;
-    getShopProducts().then((items) => {
-      if (mounted && items && items.length > 0) {
-        setProducts(items.filter((p) => p.isPublished !== false));
-      }
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const filteredProducts =
+  const rawFilteredProducts =
     activeCategory === 'All collections'
       ? products
       : products.filter((p) => p.category === activeCategory);
 
-  const handleEnquire = (product) => {
-    if (onOpenConsultation) {
-      onOpenConsultation({
-        productName: `${product.name} (${product.tag || product.category})`
-      });
+  // Deduplicate products so each unique piece appears only once
+  const filteredProducts = [];
+  const seenProducts = new Set();
+  for (const product of rawFilteredProducts) {
+    const key = product.image || product.name;
+    if (!seenProducts.has(key)) {
+      seenProducts.add(key);
+      filteredProducts.push(product);
     }
-  };
+  }
 
   const handleViewDetails = (product) => {
     if (onNavigate) {
       onNavigate('shop-details', product);
-    } else {
-      handleEnquire(product);
     }
   };
 
@@ -99,33 +86,15 @@ export default function ShopPage({ onOpenConsultation, onNavigate }) {
                   <span className="shop-product-tag">{product.tag}</span>
                   <h2 className="shop-product-name">{product.name}</h2>
 
-                  {/* Price and Finishes Row */}
+                  {/* Price Row */}
                   <div className="shop-price-finishes-row">
                     <span className="shop-product-price">{product.price}</span>
-                    <div className="shop-material-swatches" aria-label="Available finishes">
-                      {product.finishes.map((finish) => (
-                        <span
-                          key={finish.name}
-                          className="shop-swatch-circle"
-                          style={{ backgroundColor: finish.color }}
-                          title={finish.name}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions Row */}
-                  <div className="shop-actions-row">
                     <button
-                      className="shop-enquire-btn"
-                      onClick={() => handleEnquire(product)}
-                      id={`enquire-btn-${product.id}`}
-                    >
-                      Enquire now
-                    </button>
-                    <button
-                      className="shop-details-link"
+                      type="button"
+                      className="shop-price-view-btn"
                       onClick={() => handleViewDetails(product)}
+                      id={`view-details-${product.id}`}
+                      aria-label={`View details for ${product.name}`}
                     >
                       View details ↗
                     </button>

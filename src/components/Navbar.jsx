@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Phone } from 'lucide-react';
 import { homeData } from '../data/homeData';
 
 export default function Navbar({ onOpenConsultation, currentPage = 'home', onNavigate, activeSection = 'home' }) {
@@ -53,15 +54,47 @@ export default function Navbar({ onOpenConsultation, currentPage = 'home', onNav
             {link.label}
           </a>
         ))}
+        {/* Mobile menu actions */}
+        <div className="nav-mobile-actions">
+          <a
+            href="tel:+917306201202"
+            className="nav-mobile-phone-link"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <Phone size={14} />
+            <span>Call: 7306201202</span>
+          </a>
+          <button
+            type="button"
+            className="nav-mobile-quote-btn"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              onOpenConsultation();
+            }}
+          >
+            Get a Quote
+          </button>
+        </div>
       </nav>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <button
-          className="nav-contact-link"
-          onClick={onOpenConsultation}
-          id="nav-contact-btn"
+      <div className="nav-actions-group">
+        <a
+          href="tel:+917306201202"
+          className="nav-phone-link"
+          id="nav-phone-link"
+          aria-label="Call iORA at 7306201202"
         >
-          Contact
+          <Phone size={13} className="nav-phone-icon" />
+          <span>7306201202</span>
+        </a>
+
+        <button
+          type="button"
+          className="nav-quote-btn"
+          onClick={onOpenConsultation}
+          id="nav-quote-btn"
+        >
+          Get a Quote
         </button>
 
         <button

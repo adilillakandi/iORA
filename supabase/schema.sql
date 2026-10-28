@@ -227,3 +227,63 @@ create policy "Admins can delete shop images"
   on storage.objects for delete
   to authenticated
   using (bucket_id = 'shop' and public.is_admin());
+
+-- ============================================================================
+-- 7. QUOTE REQUESTS / LEADS TABLE & POLICIES
+-- ============================================================================
+create table if not exists public.quote_requests (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text not null,
+  phone text not null,
+  project_type text not null,
+  description text,
+  status text not null default 'pending' check (status in ('pending', 'contacted', 'quoted', 'completed', 'cancelled')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Performance & sorting index
+create index if not exists idx_quote_requests_status_created
+  on public.quote_requests (status, created_at desc);
+
+-- Automatic updated_at trigger
+drop trigger if exists trg_quote_requests_updated_at on public.quote_requests;
+create trigger trg_quote_requests_updated_at
+  before update on public.quote_requests
+  for each row execute function public.handle_updated_at();
+
+-- Enable Row-Level Security
+alter table public.quote_requests enable row level security;
+
+-- Public can submit quote requests
+drop policy if exists "Public can submit quote requests" on public.quote_requests;
+create policy "Public can submit quote requests"
+  on public.quote_requests
+  for insert
+  to anon, authenticated
+  with check (true);
+
+-- Admins can view, update, delete quote requests
+drop policy if exists "Admins can view quote requests" on public.quote_requests;
+create policy "Admins can view quote requests"
+  on public.quote_requests
+  for select
+  to authenticated
+  using (public.is_admin());
+
+drop policy if exists "Admins can update quote requests" on public.quote_requests;
+create policy "Admins can update quote requests"
+  on public.quote_requests
+  for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+drop policy if exists "Admins can delete quote requests" on public.quote_requests;
+create policy "Admins can delete quote requests"
+  on public.quote_requests
+  for delete
+  to authenticated
+  using (public.is_admin());
+

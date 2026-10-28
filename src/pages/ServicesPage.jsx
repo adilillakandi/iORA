@@ -82,16 +82,6 @@ export default function ServicesPage({ onNavigate, onOpenConsultation }) {
                   />
                 ))}
               </div>
-
-              {/* Image Caption Row */}
-              <div className="featured-service-caption-row">
-                <span className="caption-philosophy">
-                  {currentService.philosophy}
-                </span>
-                <span className="caption-category">
-                  {currentService.category}
-                </span>
-              </div>
             </div>
           </div>
         </div>

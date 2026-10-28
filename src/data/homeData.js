@@ -265,6 +265,11 @@ export const homeData = {
   },
 
   footer: {
+    phone: '+91 73062 01202',
+    phoneRaw: '+917306201202',
+    phoneSecondary: '+91 73063 01302',
+    phoneSecondaryRaw: '+917306301302',
+    email: 'iorainteriorsdevelopers@gmail.com',
     links: [
       { label: 'About', id: 'about' },
       { label: 'Projects', id: 'projects' },
@@ -276,22 +281,17 @@ export const homeData = {
       {
         name: 'Instagram',
         icon: 'https://api.builder.io/api/v1/image/assets/TEMP/c39067b5690f2ea7df86df1778975f6ae0f23651?placeholderIfAbsent=true',
-        url: 'https://instagram.com'
-      },
-      {
-        name: 'X',
-        icon: 'https://api.builder.io/api/v1/image/assets/TEMP/5fcc1a94729f744ee61bef06c329ee0a9e893612?placeholderIfAbsent=true',
-        url: 'https://x.com'
-      },
-      {
-        name: 'Facebook',
-        icon: 'https://api.builder.io/api/v1/image/assets/TEMP/5b84e2ce0cbdbb3651fc148a563d8e83287d07d5?placeholderIfAbsent=true',
-        url: 'https://facebook.com'
+        url: 'https://www.instagram.com/iora_interiors_kerala/?hl=en'
       },
       {
         name: 'YouTube',
         icon: 'https://api.builder.io/api/v1/image/assets/TEMP/61a509ac129ff7e82d42864cc6ca517cc47f8915?placeholderIfAbsent=true',
-        url: 'https://youtube.com'
+        url: 'https://youtube.com/@iorainteriorsdevelopers?si=0oxWQIiSmH4YmbaG'
+      },
+      {
+        name: 'Facebook',
+        icon: 'https://api.builder.io/api/v1/image/assets/TEMP/5b84e2ce0cbdbb3651fc148a563d8e83287d07d5?placeholderIfAbsent=true',
+        url: 'https://www.facebook.com/share/1KAhYSmNtc/'
       }
     ],
     copyright: '© 2026. iora All rights reserved.',

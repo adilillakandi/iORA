@@ -1,4 +1,5 @@
 import React from 'react';
+import { Phone, Mail } from 'lucide-react';
 import { homeData } from '../data/homeData';
 
 export default function Footer({ onNavigate, onOpenConsultation }) {
@@ -46,6 +47,42 @@ export default function Footer({ onNavigate, onOpenConsultation }) {
               </a>
             ))}
           </nav>
+
+          {/* Contact Details */}
+          <div className="footer-contact-col">
+            <div className="footer-contact-item">
+              <Phone size={14} className="footer-contact-icon" />
+              <div className="footer-phones-row">
+                <a
+                  href={`tel:${footer.phoneRaw || footer.phone.replace(/\s+/g, '')}`}
+                  className="footer-contact-link"
+                  aria-label={`Call iORA at ${footer.phone}`}
+                >
+                  <span>{footer.phone}</span>
+                </a>
+                {footer.phoneSecondary && (
+                  <>
+                    <span className="footer-phone-divider">/</span>
+                    <a
+                      href={`tel:${footer.phoneSecondaryRaw || footer.phoneSecondary.replace(/\s+/g, '')}`}
+                      className="footer-contact-link"
+                      aria-label={`Call iORA at ${footer.phoneSecondary}`}
+                    >
+                      <span>{footer.phoneSecondary}</span>
+                    </a>
+                  </>
+                )}
+              </div>
+            </div>
+            <a
+              href={`mailto:${footer.email}`}
+              className="footer-contact-link"
+              aria-label={`Email iORA at ${footer.email}`}
+            >
+              <Mail size={14} className="footer-contact-icon" />
+              <span>{footer.email}</span>
+            </a>
+          </div>
 
           {/* Social Row */}
           <div className="footer-social-row">

@@ -401,3 +401,56 @@ export async function seedDefaultsToSupabase() {
     return results;
   }
 }
+
+// ============================================================================
+// QUOTE REQUESTS / LEADS
+// ============================================================================
+const LOCAL_QUOTES_KEY = 'iora_quote_requests';
+
+export async function saveQuoteRequest(quoteData) {
+  try {
+    const payload = {
+      name: quoteData.name,
+      email: quoteData.email,
+      phone: quoteData.phone,
+      project_type: quoteData.project_type || quoteData.projectType,
+      description: quoteData.description || ''
+    };
+
+    // Save locally as fallback
+    const localQuotes = getLocalItems(LOCAL_QUOTES_KEY);
+    setLocalItems(LOCAL_QUOTES_KEY, [
+      { id: Date.now().toString(), ...payload, created_at: new Date().toISOString() },
+      ...localQuotes
+    ]);
+
+    const { data, error } = await supabase
+      .from('quote_requests')
+      .insert([payload])
+      .select();
+
+    if (error) {
+      console.warn('Supabase quote insert skipped (table may not exist yet):', error.message);
+      return { success: false, error };
+    }
+    return { success: true, data };
+  } catch (err) {
+    console.warn('Error saving quote request to Supabase:', err);
+    return { success: false, error: err };
+  }
+}
+
+export async function getQuoteRequests() {
+  try {
+    const { data, error } = await supabase
+      .from('quote_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn('Failed to load quote requests from Supabase, returning local:', err);
+    return getLocalItems(LOCAL_QUOTES_KEY);
+  }
+}

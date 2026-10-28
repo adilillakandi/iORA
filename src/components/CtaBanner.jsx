@@ -15,7 +15,7 @@ export default function CtaBanner({ onOpenConsultation, isStacked = false }) {
         style={{ backgroundImage: `url(${ctaBanner.bgImage})` }}
       >
         <div className="cta-banner-overlay" />
-        
+
         <div className="cta-banner-content">
           <h2 className="cta-headline">
             Ready to Transform Your<br />Space?

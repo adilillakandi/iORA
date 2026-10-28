@@ -5,11 +5,14 @@ import { homeData } from '../data/homeData';
 const subtitleVariants = {
   initial: {
     y: -12,
+    opacity: 0,
   },
   animate: {
-    y: [-12, 0, 0],
+    y: 0,
+    opacity: 1,
     transition: {
-      y: { duration: 2, times: [0, 0.6337, 1], ease: ["easeInOut", "linear"], repeat: Infinity },
+      duration: 1,
+      ease: 'easeOut',
     },
   },
 };
@@ -18,13 +21,15 @@ const headlineVariants = {
   initial: {
     scaleX: 0.96,
     scaleY: 0.96,
+    opacity: 0,
   },
   animate: {
-    scaleX: [0.96, 0.96, 1, 1],
-    scaleY: [0.96, 0.96, 1, 1],
+    scaleX: 1,
+    scaleY: 1,
+    opacity: 1,
     transition: {
-      scaleX: { duration: 2, times: [0, 0.0316, 0.6337, 1], ease: ["linear", "easeOut", "linear"], repeat: Infinity },
-      scaleY: { duration: 2, times: [0, 0.0316, 0.6337, 1], ease: ["linear", "easeOut", "linear"], repeat: Infinity },
+      duration: 1,
+      ease: 'easeOut',
     },
   },
 };
