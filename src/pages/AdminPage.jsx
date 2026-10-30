@@ -10,7 +10,9 @@ import {
   ArrowLeft,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  LogOut,
+  UserCheck
 } from 'lucide-react';
 import {
   getPortfolioProjects,
@@ -20,8 +22,16 @@ import {
   uploadImageToStorage,
   fileToBase64
 } from '../utils/dataService';
+import AdminLoginPage from './AdminLoginPage';
+import { checkAdminSession, logoutAdmin } from '../utils/authService';
 
 export default function AdminPage({ onNavigate }) {
+  // Authentication state
+  const [authStatus, setAuthStatus] = useState({
+    isAuthenticated: false,
+    email: null,
+    loading: true
+  });
   // Portfolio items state
   const [portfolioList, setPortfolioList] = useState([]);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
@@ -56,19 +66,48 @@ export default function AdminPage({ onNavigate }) {
     setPortfolioLoading(false);
   };
 
-  // Initial data loading
+  // Auth verification check
   useEffect(() => {
     let isMounted = true;
-    getPortfolioProjects().then((items) => {
+    checkAdminSession().then((session) => {
       if (isMounted) {
-        setPortfolioList(items);
-        setPortfolioLoading(false);
+        setAuthStatus({
+          isAuthenticated: session.isAuthenticated,
+          email: session.email,
+          loading: false
+        });
       }
     });
     return () => {
       isMounted = false;
     };
   }, []);
+
+  const handleLogout = async () => {
+    await logoutAdmin();
+    setAuthStatus({
+      isAuthenticated: false,
+      email: null,
+      loading: false
+    });
+    showToast('Signed out of admin portal');
+  };
+
+  // Initial data loading
+  useEffect(() => {
+    let isMounted = true;
+    if (authStatus.isAuthenticated) {
+      getPortfolioProjects().then((items) => {
+        if (isMounted) {
+          setPortfolioList(items);
+          setPortfolioLoading(false);
+        }
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [authStatus.isAuthenticated]);
 
   // Portfolio upload handlers
   const handlePortfolioFileChange = (e) => {
@@ -169,6 +208,36 @@ export default function AdminPage({ onNavigate }) {
         p.subtitle.toLowerCase().includes(portfolioSearch.toLowerCase())
     );
 
+  // Authentication loading screen
+  if (authStatus.loading) {
+    return (
+      <div className="admin-loading-screen">
+        <div className="admin-loading-pulse">
+          <RefreshCw size={32} className="spin-animate admin-gold-icon" />
+          <p>Verifying administrator authorization...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If unauthenticated, render the Luxury Admin Login Page
+  if (!authStatus.isAuthenticated) {
+    return (
+      <AdminLoginPage
+        onLoginSuccess={(user) => {
+          setAuthStatus({
+            isAuthenticated: true,
+            email: user?.email || 'ksidanbasheer@gmail.com',
+            loading: false
+          });
+          loadPortfolio();
+          showToast('Welcome back, Administrator');
+        }}
+        onBackToSite={() => onNavigate('home')}
+      />
+    );
+  }
+
   return (
     <div className="iora-admin-portal">
       {/* Toast alert */}
@@ -199,6 +268,23 @@ export default function AdminPage({ onNavigate }) {
             <div className="admin-brand-title">
               <span className="brand-accent">iORA</span> Studio Admin
             </div>
+          </div>
+
+          <div className="admin-topbar-actions">
+            <div className="admin-user-badge" title="Authenticated Administrator">
+              <UserCheck size={14} className="admin-gold-icon" />
+              <span className="admin-user-email">
+                {authStatus.email || 'ksidanbasheer@gmail.com'}
+              </span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="admin-logout-btn"
+              title="Sign out of admin session"
+            >
+              <LogOut size={14} />
+              <span>Sign Out</span>
+            </button>
           </div>
         </div>
       </header>
