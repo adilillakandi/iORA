@@ -1,10 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { shopData } from '../data/shopData';
+import { getShopProducts } from '../utils/dataService';
 import CtaBanner from '../components/CtaBanner';
 
 export default function ShopPage({ onOpenConsultation, onNavigate }) {
-  const { header, categories, products } = shopData;
+  const { header, categories, products: defaultProducts } = shopData;
+  const [products, setProducts] = useState(defaultProducts);
   const [activeCategory, setActiveCategory] = useState('All collections');
+
+  useEffect(() => {
+    let mounted = true;
+    getShopProducts().then((items) => {
+      if (mounted && items && items.length > 0) {
+        setProducts(items.filter((p) => p.isPublished !== false));
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const rawFilteredProducts =
     activeCategory === 'All collections'

@@ -15,6 +15,7 @@ export default function HomePage({ onOpenConsultation, onNavigate }) {
       <CustomCollections
         onOpenConsultation={onOpenConsultation}
         onShopClick={() => onNavigate('shop')}
+        onNavigate={onNavigate}
       />
       <FeaturedProjects
         onViewAll={() => onNavigate('portfolio')}

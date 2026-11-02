@@ -38,7 +38,31 @@ begin
     select 1
     from public.admin_users
     where user_id = (select auth.uid())
+  ) or (
+    (select auth.jwt() ->> 'email') = 'ksidanbasheer@gmail.com'
   );
+end;
+$$ language plpgsql security definer set search_path = public;
+
+-- Function to claim initial admin access if none exists
+create or replace function public.claim_first_admin()
+returns boolean as $$
+declare
+  admin_count integer;
+  current_user_email text;
+begin
+  select count(*) into admin_count from public.admin_users;
+  if admin_count = 0 then
+    select email into current_user_email from auth.users where id = (select auth.uid());
+    insert into public.admin_users (user_id, email, role)
+    values (
+      (select auth.uid()),
+      coalesce(current_user_email, 'ksidanbasheer@gmail.com'),
+      'super_admin'
+    );
+    return true;
+  end if;
+  return false;
 end;
 $$ language plpgsql security definer set search_path = public;
 
@@ -87,11 +111,17 @@ create table if not exists public.shop_products (
   material text,
   finishes jsonb not null default '[]'::jsonb,
   configurations jsonb not null default '[]'::jsonb,
+  individual_items jsonb not null default '[]'::jsonb,
   display_order integer not null default 0,
   is_published boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Idempotent column additions for existing deployments
+alter table public.shop_products
+  add column if not exists configurations jsonb not null default '[]'::jsonb,
+  add column if not exists individual_items jsonb not null default '[]'::jsonb;
 
 -- Performance & filtering indexes for public catalog queries
 create index if not exists idx_shop_products_published_category_order

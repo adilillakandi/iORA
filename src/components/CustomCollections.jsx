@@ -1,23 +1,73 @@
 import React, { useState } from 'react';
 import { homeData } from '../data/homeData';
 
-export default function CustomCollections({ onOpenConsultation, onShopClick }) {
+export default function CustomCollections({ onOpenConsultation, onShopClick, onNavigate }) {
   const { collections } = homeData;
   const [activeCategory, setActiveCategory] = useState(collections.categories[0]);
 
-  const handleHotspotClick = (hotspot) => {
-    if (onOpenConsultation) {
-      onOpenConsultation({
-        productName: hotspot.name.replace('\n', ' '),
-        price: `₹ ${Number(hotspot.price).toLocaleString('en-IN')}`
-      });
+  const handlePriceClick = (hotspot, e) => {
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+
+    const cleanName = hotspot?.name ? hotspot.name.replace('\n', ' ') : '';
+    const nameLower = cleanName.toLowerCase();
+
+    // Determine corresponding shop configuration ID if applicable
+    let configId = 'full-set';
+    if (nameLower.includes('wardrobe') || hotspot?.id === 'hotspot-tall-1') {
+      configId = 'wardrobe';
+    } else if (
+      nameLower.includes('bedside') ||
+      nameLower.includes('cabinet') ||
+      nameLower.includes('makeup') ||
+      hotspot?.id === 'hotspot-1'
+    ) {
+      configId = 'bedside-box';
+    } else if (nameLower.includes('bed') || hotspot?.id === 'hotspot-2') {
+      configId = 'full-set';
+    }
+
+    const formattedPrice = hotspot?.price
+      ? `₹ ${Number(String(hotspot.price).replace(/[^0-9]/g, '')).toLocaleString('en-IN')}`
+      : '';
+
+    const productPayload = {
+      id: hotspot.id,
+      configId,
+      name: cleanName,
+      price: formattedPrice || (hotspot.price ? `₹ ${hotspot.price}` : ''),
+      rawPrice: hotspot.price
+    };
+
+    if (onNavigate) {
+      onNavigate('shop-details', productPayload);
     } else if (onShopClick) {
       onShopClick();
+    } else {
+      try {
+        sessionStorage.setItem('iora_selected_product', JSON.stringify(productPayload));
+        localStorage.setItem('iora_selected_product', JSON.stringify(productPayload));
+      } catch {
+        // ignore
+      }
+      window.location.hash = 'shop-details';
     }
   };
 
+  const handleHotspotClick = (hotspot, e) => {
+    handlePriceClick(hotspot, e);
+  };
+
   const handleCardClick = (item) => {
-    if (onOpenConsultation) {
+    if (onNavigate) {
+      onNavigate('shop-details', {
+        id: item.id,
+        name: item.title,
+        price: item.price,
+        image: item.image
+      });
+    } else if (onOpenConsultation) {
       onOpenConsultation({
         productName: item.title,
         price: item.price
@@ -98,11 +148,17 @@ export default function CustomCollections({ onOpenConsultation, onShopClick }) {
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleHotspotClick(hotspot);
+                    handleHotspotClick(hotspot, e);
                   }}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Enquire about ${hotspot.name.replace('\n', ' ')}`}
+                  aria-label={`View details for ${hotspot.name.replace('\n', ' ')}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleHotspotClick(hotspot, e);
+                    }
+                  }}
                 >
                   <div className="hotspot-pin-group">
                     <div className="hotspot-pin-dot" />
@@ -117,7 +173,24 @@ export default function CustomCollections({ onOpenConsultation, onShopClick }) {
                         </React.Fragment>
                       ))}
                     </div>
-                    <div className="hotspot-card-price">
+                    <div
+                      className="hotspot-card-price"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePriceClick(hotspot, e);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title={`View product details - ₹ ${hotspot.price}`}
+                      aria-label={`View product details - ₹ ${hotspot.price}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handlePriceClick(hotspot, e);
+                        }
+                      }}
+                    >
                       <span className="currency-symbol">₹</span>
                       <span className="price-number">{hotspot.price}</span>
                     </div>
@@ -152,11 +225,17 @@ export default function CustomCollections({ onOpenConsultation, onShopClick }) {
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleHotspotClick(hotspot);
+                    handleHotspotClick(hotspot, e);
                   }}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Enquire about ${hotspot.name.replace('\n', ' ')}`}
+                  aria-label={`View details for ${hotspot.name.replace('\n', ' ')}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleHotspotClick(hotspot, e);
+                    }
+                  }}
                 >
                   <div className="hotspot-pin-group">
                     <div className="hotspot-pin-dot" />
@@ -171,7 +250,24 @@ export default function CustomCollections({ onOpenConsultation, onShopClick }) {
                         </React.Fragment>
                       ))}
                     </div>
-                    <div className="hotspot-card-price">
+                    <div
+                      className="hotspot-card-price"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePriceClick(hotspot, e);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title={`View product details - ₹ ${hotspot.price}`}
+                      aria-label={`View product details - ₹ ${hotspot.price}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handlePriceClick(hotspot, e);
+                        }
+                      }}
+                    >
                       <span className="currency-symbol">₹</span>
                       <span className="price-number">{hotspot.price}</span>
                     </div>

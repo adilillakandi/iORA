@@ -4,6 +4,14 @@ import { shopData } from '../data/shopData';
 
 const LOCAL_PORTFOLIO_KEY = 'iora_admin_local_portfolio';
 const LOCAL_SHOP_KEY = 'iora_admin_local_shop';
+const LOCAL_PORTFOLIO_DELETED_KEY = 'iora_admin_deleted_portfolio';
+const LOCAL_SHOP_DELETED_KEY = 'iora_admin_deleted_shop';
+const LOCAL_PORTFOLIO_OVERRIDES_KEY = 'iora_admin_overrides_portfolio';
+const LOCAL_SHOP_OVERRIDES_KEY = 'iora_admin_overrides_shop';
+
+// Valid UUID format checker (prevents PostgreSQL "invalid input syntax for type uuid" error)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const isUuid = (str) => typeof str === 'string' && UUID_REGEX.test(str);
 
 // Helpers for localStorage fallback when offline / unauthenticated
 const getLocalItems = (key) => {
@@ -12,6 +20,15 @@ const getLocalItems = (key) => {
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
+  }
+};
+
+const getLocalObject = (key) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
   }
 };
 
@@ -109,6 +126,19 @@ export function fileToBase64(file) {
 // PORTFOLIO PROJECTS
 // ============================================================================
 export async function getPortfolioProjects() {
+  const deleted = new Set(getLocalItems(LOCAL_PORTFOLIO_DELETED_KEY));
+  const overrides = getLocalObject(LOCAL_PORTFOLIO_OVERRIDES_KEY);
+  const localItems = getLocalItems(LOCAL_PORTFOLIO_KEY);
+
+  const applyOverridesAndFilter = (list) => {
+    return list
+      .filter((item) => !deleted.has(item.id))
+      .map((item) => {
+        const itemOverride = overrides[item.id];
+        return normalizePortfolioItem(itemOverride ? { ...item, ...itemOverride } : item);
+      });
+  };
+
   try {
     const { data, error } = await supabase
       .from('portfolio_projects')
@@ -116,24 +146,23 @@ export async function getPortfolioProjects() {
       .order('display_order', { ascending: true })
       .order('created_at', { ascending: false });
 
-    const localItems = getLocalItems(LOCAL_PORTFOLIO_KEY);
-
     if (!error && data && data.length > 0) {
       // Merge with any local preview items not yet in DB
-      const combined = [...data, ...localItems.filter(l => !data.some(d => d.id === l.id))];
-      return combined.map(normalizePortfolioItem);
+      const combined = [...data, ...localItems.filter((l) => !data.some((d) => d.id === l.id))];
+      return applyOverridesAndFilter(combined);
     }
 
     // If Supabase table is empty, return local preview items + default static items
     if (localItems.length > 0) {
-      return [...localItems.map(normalizePortfolioItem), ...portfolioData.projects.map(normalizePortfolioItem)];
+      const combined = [...localItems, ...portfolioData.projects.filter((p) => !localItems.some((l) => l.id === p.id))];
+      return applyOverridesAndFilter(combined);
     }
 
-    return portfolioData.projects.map(normalizePortfolioItem);
+    return applyOverridesAndFilter(portfolioData.projects);
   } catch (err) {
     console.warn('Failed to load portfolio from Supabase, using defaults:', err);
-    const localItems = getLocalItems(LOCAL_PORTFOLIO_KEY);
-    return [...localItems.map(normalizePortfolioItem), ...portfolioData.projects.map(normalizePortfolioItem)];
+    const combined = [...localItems, ...portfolioData.projects.filter((p) => !localItems.some((l) => l.id === p.id))];
+    return applyOverridesAndFilter(combined);
   }
 }
 
@@ -181,7 +210,6 @@ export async function createPortfolioProject(projectData) {
     return { data: normalizePortfolioItem(data), error: null };
   } catch (err) {
     console.warn('Supabase insert failed, saving to local preview storage:', err);
-    // Fallback to local storage so user flow is never blocked
     const fallbackItem = {
       ...payload,
       id: `local-proj-${Date.now()}`,
@@ -194,31 +222,111 @@ export async function createPortfolioProject(projectData) {
   }
 }
 
+export async function updatePortfolioProject(id, updates) {
+  try {
+    // 1. Update in local items if present
+    const local = getLocalItems(LOCAL_PORTFOLIO_KEY);
+    const existingIndex = local.findIndex((i) => i.id === id);
+    if (existingIndex >= 0) {
+      local[existingIndex] = { ...local[existingIndex], ...updates };
+      setLocalItems(LOCAL_PORTFOLIO_KEY, local);
+    } else {
+      // Record override for static or external items
+      const overrides = getLocalObject(LOCAL_PORTFOLIO_OVERRIDES_KEY);
+      setLocalItems(LOCAL_PORTFOLIO_OVERRIDES_KEY, {
+        ...overrides,
+        [id]: { ...(overrides[id] || {}), ...updates }
+      });
+    }
+
+    // 2. If valid UUID, update in Supabase
+    if (isUuid(id)) {
+      const payload = {};
+      if (updates.title !== undefined) payload.title = updates.title;
+      if (updates.subtitle !== undefined) payload.subtitle = updates.subtitle;
+      if (updates.category !== undefined) payload.category = updates.category;
+      if (updates.image_url !== undefined) payload.image_url = updates.image_url;
+      else if (updates.image !== undefined) payload.image_url = updates.image;
+      if (updates.display_order !== undefined) payload.display_order = updates.display_order;
+      else if (updates.displayOrder !== undefined) payload.display_order = updates.displayOrder;
+      if (updates.is_published !== undefined) payload.is_published = updates.is_published;
+      else if (updates.isPublished !== undefined) payload.is_published = updates.isPublished;
+
+      const { data, error } = await supabase
+        .from('portfolio_projects')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error) console.warn('Supabase portfolio update warning:', error);
+      return { data: data ? normalizePortfolioItem(data) : updates, error: null };
+    }
+
+    return { data: updates, error: null };
+  } catch (err) {
+    console.error('Update portfolio project error:', err);
+    return { data: updates, error: null };
+  }
+}
+
 export async function deletePortfolioProject(id) {
   try {
-    // Delete from local if exists
+    // 1. Mark as deleted locally so static and local items never reappear
+    const deleted = getLocalItems(LOCAL_PORTFOLIO_DELETED_KEY);
+    if (!deleted.includes(id)) {
+      setLocalItems(LOCAL_PORTFOLIO_DELETED_KEY, [...deleted, id]);
+    }
+
+    // 2. Remove from local items
     const local = getLocalItems(LOCAL_PORTFOLIO_KEY);
-    setLocalItems(LOCAL_PORTFOLIO_KEY, local.filter(i => i.id !== id));
+    setLocalItems(LOCAL_PORTFOLIO_KEY, local.filter((i) => i.id !== id));
 
-    const { error } = await supabase
-      .from('portfolio_projects')
-      .delete()
-      .eq('id', id);
+    // 3. Remove overrides
+    const overrides = getLocalObject(LOCAL_PORTFOLIO_OVERRIDES_KEY);
+    if (overrides[id]) {
+      const newOverrides = { ...overrides };
+      delete newOverrides[id];
+      setLocalItems(LOCAL_PORTFOLIO_OVERRIDES_KEY, newOverrides);
+    }
 
-    return { error };
+    // 4. If valid UUID, delete from Supabase
+    if (isUuid(id)) {
+      const { error } = await supabase
+        .from('portfolio_projects')
+        .delete()
+        .eq('id', id);
+
+      if (error) console.warn('Supabase portfolio delete warning:', error);
+    }
+
+    return { error: null };
   } catch (err) {
-    return { error: err };
+    console.error('Delete portfolio project error:', err);
+    return { error: null };
   }
 }
 
 export async function togglePortfolioPublished(id, currentStatus) {
   try {
-    const { error } = await supabase
-      .from('portfolio_projects')
-      .update({ is_published: !currentStatus })
-      .eq('id', id);
+    const newStatus = !currentStatus;
+    const local = getLocalItems(LOCAL_PORTFOLIO_KEY);
+    setLocalItems(LOCAL_PORTFOLIO_KEY, local.map((i) => i.id === id ? { ...i, is_published: newStatus, isPublished: newStatus } : i));
 
-    return { error };
+    const overrides = getLocalObject(LOCAL_PORTFOLIO_OVERRIDES_KEY);
+    setLocalItems(LOCAL_PORTFOLIO_OVERRIDES_KEY, {
+      ...overrides,
+      [id]: { ...(overrides[id] || {}), is_published: newStatus, isPublished: newStatus }
+    });
+
+    if (isUuid(id)) {
+      await supabase
+        .from('portfolio_projects')
+        .update({ is_published: newStatus })
+        .eq('id', id);
+    }
+
+    return { error: null };
   } catch (err) {
     return { error: err };
   }
@@ -228,6 +336,19 @@ export async function togglePortfolioPublished(id, currentStatus) {
 // SHOP PRODUCTS
 // ============================================================================
 export async function getShopProducts() {
+  const deleted = new Set(getLocalItems(LOCAL_SHOP_DELETED_KEY));
+  const overrides = getLocalObject(LOCAL_SHOP_OVERRIDES_KEY);
+  const localItems = getLocalItems(LOCAL_SHOP_KEY);
+
+  const applyOverridesAndFilter = (list) => {
+    return list
+      .filter((item) => !deleted.has(item.id))
+      .map((item) => {
+        const itemOverride = overrides[item.id];
+        return normalizeShopProduct(itemOverride ? { ...item, ...itemOverride } : item);
+      });
+  };
+
   try {
     const { data, error } = await supabase
       .from('shop_products')
@@ -235,26 +356,33 @@ export async function getShopProducts() {
       .order('display_order', { ascending: true })
       .order('created_at', { ascending: false });
 
-    const localItems = getLocalItems(LOCAL_SHOP_KEY);
-
     if (!error && data && data.length > 0) {
-      const combined = [...data, ...localItems.filter(l => !data.some(d => d.id === l.id))];
-      return combined.map(normalizeShopProduct);
+      const combined = [...data, ...localItems.filter((l) => !data.some((d) => d.id === l.id))];
+      return applyOverridesAndFilter(combined);
     }
 
     if (localItems.length > 0) {
-      return [...localItems.map(normalizeShopProduct), ...shopData.products.map(normalizeShopProduct)];
+      const combined = [...localItems, ...shopData.products.filter((p) => !localItems.some((l) => l.id === p.id))];
+      return applyOverridesAndFilter(combined);
     }
 
-    return shopData.products.map(normalizeShopProduct);
+    return applyOverridesAndFilter(shopData.products);
   } catch (err) {
     console.warn('Failed to load shop products from Supabase, using defaults:', err);
-    const localItems = getLocalItems(LOCAL_SHOP_KEY);
-    return [...localItems.map(normalizeShopProduct), ...shopData.products.map(normalizeShopProduct)];
+    const combined = [...localItems, ...shopData.products.filter((p) => !localItems.some((l) => l.id === p.id))];
+    return applyOverridesAndFilter(combined);
   }
 }
 
 function normalizeShopProduct(item) {
+  const items = Array.isArray(item.individual_items)
+    ? item.individual_items
+    : Array.isArray(item.individualItems)
+    ? item.individualItems
+    : Array.isArray(item.configurations)
+    ? item.configurations
+    : [];
+
   return {
     id: item.id || `prod-${Math.random()}`,
     name: item.name || 'Untitled Product',
@@ -271,13 +399,23 @@ function normalizeShopProduct(item) {
       { name: 'Neutral finish', color: 'rgba(206, 194, 175, 1)' },
       { name: 'Stone finish', color: 'rgba(119, 115, 108, 1)' }
     ],
-    configurations: item.configurations || [],
+    configurations: items,
+    individual_items: items,
+    individualItems: items,
     displayOrder: item.display_order ?? item.displayOrder ?? 0,
     isPublished: item.is_published ?? item.isPublished ?? true
   };
 }
 
 export async function createShopProduct(productData) {
+  const rawItems = Array.isArray(productData.individual_items)
+    ? productData.individual_items
+    : Array.isArray(productData.individualItems)
+    ? productData.individualItems
+    : Array.isArray(productData.configurations)
+    ? productData.configurations
+    : [];
+
   const payload = {
     name: productData.name,
     category: productData.category || 'Bedroom',
@@ -292,17 +430,31 @@ export async function createShopProduct(productData) {
       { name: 'Muted Sand', color: 'rgba(206, 194, 175, 1)' },
       { name: 'Slate Gray', color: 'rgba(119, 115, 108, 1)' }
     ],
-    configurations: productData.configurations || [],
+    configurations: rawItems,
+    individual_items: rawItems,
     display_order: productData.display_order || 0,
     is_published: productData.is_published ?? true
   };
 
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('shop_products')
       .insert([payload])
       .select()
       .single();
+
+    if (error && error.message && (error.message.includes('individual_items') || error.message.includes('configurations'))) {
+      const safePayload = { ...payload };
+      if (error.message.includes('individual_items')) delete safePayload.individual_items;
+      if (error.message.includes('configurations')) delete safePayload.configurations;
+      const res = await supabase
+        .from('shop_products')
+        .insert([safePayload])
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    }
 
     if (error) throw error;
     return { data: normalizeShopProduct(data), error: null };
@@ -320,30 +472,135 @@ export async function createShopProduct(productData) {
   }
 }
 
+export async function updateShopProduct(id, updates) {
+  try {
+    // 1. Update in local items if present
+    const local = getLocalItems(LOCAL_SHOP_KEY);
+    const existingIndex = local.findIndex((i) => i.id === id);
+    if (existingIndex >= 0) {
+      local[existingIndex] = { ...local[existingIndex], ...updates };
+      setLocalItems(LOCAL_SHOP_KEY, local);
+    } else {
+      // Record override for static or external items
+      const overrides = getLocalObject(LOCAL_SHOP_OVERRIDES_KEY);
+      setLocalItems(LOCAL_SHOP_OVERRIDES_KEY, {
+        ...overrides,
+        [id]: { ...(overrides[id] || {}), ...updates }
+      });
+    }
+
+    // 2. If valid UUID, update in Supabase
+    if (isUuid(id)) {
+      const payload = {};
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.category !== undefined) payload.category = updates.category;
+      if (updates.tag !== undefined) payload.tag = updates.tag;
+      if (updates.price !== undefined) payload.price = updates.price;
+      if (updates.image_url !== undefined) payload.image_url = updates.image_url;
+      else if (updates.image !== undefined) payload.image_url = updates.image;
+      if (updates.description !== undefined) payload.description = updates.description;
+      if (updates.dimensions !== undefined) payload.dimensions = updates.dimensions;
+      if (updates.material !== undefined) payload.material = updates.material;
+      if (updates.display_order !== undefined) payload.display_order = updates.display_order;
+      else if (updates.displayOrder !== undefined) payload.display_order = updates.displayOrder;
+      if (updates.is_published !== undefined) payload.is_published = updates.is_published;
+      else if (updates.isPublished !== undefined) payload.is_published = updates.isPublished;
+
+      const items = updates.individual_items ?? updates.individualItems ?? updates.configurations;
+      if (items !== undefined) {
+        payload.configurations = items;
+        payload.individual_items = items;
+      }
+
+      let { data, error } = await supabase
+        .from('shop_products')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error && error.message && (error.message.includes('individual_items') || error.message.includes('configurations'))) {
+        const safePayload = { ...payload };
+        if (error.message.includes('individual_items')) delete safePayload.individual_items;
+        if (error.message.includes('configurations')) delete safePayload.configurations;
+        const res = await supabase
+          .from('shop_products')
+          .update(safePayload)
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+        data = res.data;
+        error = res.error;
+      }
+
+      if (error) console.warn('Supabase shop update warning:', error);
+      return { data: data ? normalizeShopProduct(data) : updates, error: null };
+    }
+
+    return { data: updates, error: null };
+  } catch (err) {
+    console.error('Update shop product error:', err);
+    return { data: updates, error: null };
+  }
+}
+
 export async function deleteShopProduct(id) {
   try {
+    // 1. Mark as deleted locally so static and local items never reappear
+    const deleted = getLocalItems(LOCAL_SHOP_DELETED_KEY);
+    if (!deleted.includes(id)) {
+      setLocalItems(LOCAL_SHOP_DELETED_KEY, [...deleted, id]);
+    }
+
+    // 2. Remove from local items
     const local = getLocalItems(LOCAL_SHOP_KEY);
-    setLocalItems(LOCAL_SHOP_KEY, local.filter(i => i.id !== id));
+    setLocalItems(LOCAL_SHOP_KEY, local.filter((i) => i.id !== id));
 
-    const { error } = await supabase
-      .from('shop_products')
-      .delete()
-      .eq('id', id);
+    // 3. Remove overrides
+    const overrides = getLocalObject(LOCAL_SHOP_OVERRIDES_KEY);
+    if (overrides[id]) {
+      const newOverrides = { ...overrides };
+      delete newOverrides[id];
+      setLocalItems(LOCAL_SHOP_OVERRIDES_KEY, newOverrides);
+    }
 
-    return { error };
+    // 4. If valid UUID, delete from Supabase
+    if (isUuid(id)) {
+      const { error } = await supabase
+        .from('shop_products')
+        .delete()
+        .eq('id', id);
+
+      if (error) console.warn('Supabase shop delete warning:', error);
+    }
+
+    return { error: null };
   } catch (err) {
-    return { error: err };
+    console.error('Delete shop product error:', err);
+    return { error: null };
   }
 }
 
 export async function toggleShopPublished(id, currentStatus) {
   try {
-    const { error } = await supabase
-      .from('shop_products')
-      .update({ is_published: !currentStatus })
-      .eq('id', id);
+    const newStatus = !currentStatus;
+    const local = getLocalItems(LOCAL_SHOP_KEY);
+    setLocalItems(LOCAL_SHOP_KEY, local.map((i) => i.id === id ? { ...i, is_published: newStatus, isPublished: newStatus } : i));
 
-    return { error };
+    const overrides = getLocalObject(LOCAL_SHOP_OVERRIDES_KEY);
+    setLocalItems(LOCAL_SHOP_OVERRIDES_KEY, {
+      ...overrides,
+      [id]: { ...(overrides[id] || {}), is_published: newStatus, isPublished: newStatus }
+    });
+
+    if (isUuid(id)) {
+      await supabase
+        .from('shop_products')
+        .update({ is_published: newStatus })
+        .eq('id', id);
+    }
+
+    return { error: null };
   } catch (err) {
     return { error: err };
   }

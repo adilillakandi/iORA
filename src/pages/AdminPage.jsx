@@ -3,22 +3,31 @@ import {
   UploadCloud,
   Plus,
   Trash2,
+  Pencil,
   CheckCircle2,
   AlertCircle,
   Image as ImageIcon,
+  ShoppingBag,
   Search,
   ArrowLeft,
   RefreshCw,
   Eye,
   EyeOff,
   LogOut,
-  UserCheck
+  UserCheck,
+  Package
 } from 'lucide-react';
 import {
   getPortfolioProjects,
   createPortfolioProject,
+  updatePortfolioProject,
   deletePortfolioProject,
   togglePortfolioPublished,
+  getShopProducts,
+  createShopProduct,
+  updateShopProduct,
+  deleteShopProduct,
+  toggleShopPublished,
   uploadImageToStorage,
   fileToBase64
 } from '../utils/dataService';
@@ -32,14 +41,20 @@ export default function AdminPage({ onNavigate }) {
     email: null,
     loading: true
   });
+
+  // Active section tab: 'portfolio' or 'shop'
+  const [activeTab, setActiveTab] = useState('portfolio');
+
   // Portfolio items state
   const [portfolioList, setPortfolioList] = useState([]);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
   const [portfolioCategoryFilter, setPortfolioCategoryFilter] = useState('All');
   const [showAddPortfolio, setShowAddPortfolio] = useState(false);
   const [portfolioSearch, setPortfolioSearch] = useState('');
+  const [editingPortfolioId, setEditingPortfolioId] = useState(null);
+  const portfolioFormRef = useRef(null);
 
-  // New Portfolio Form
+  // New/Edit Portfolio Form
   const [newPortfolio, setNewPortfolio] = useState({
     title: '',
     subtitle: '',
@@ -51,6 +66,33 @@ export default function AdminPage({ onNavigate }) {
   const [portfolioPreviewUrl, setPortfolioPreviewUrl] = useState('');
   const [portfolioSubmitting, setPortfolioSubmitting] = useState(false);
   const portfolioFileRef = useRef(null);
+
+  // Shop items state
+  const [shopList, setShopList] = useState([]);
+  const [shopLoading, setShopLoading] = useState(true);
+  const [shopCategoryFilter, setShopCategoryFilter] = useState('All');
+  const [showAddShop, setShowAddShop] = useState(false);
+  const [shopSearch, setShopSearch] = useState('');
+  const [editingShopId, setEditingShopId] = useState(null);
+  const shopFormRef = useRef(null);
+
+  // New/Edit Shop Product Form
+  const [newShopProduct, setNewShopProduct] = useState({
+    name: '',
+    category: 'Bedroom',
+    tag: '',
+    price: '',
+    description: '',
+    dimensions: '',
+    material: '',
+    display_order: 0,
+    is_published: true
+  });
+  const [shopFile, setShopFile] = useState(null);
+  const [shopPreviewUrl, setShopPreviewUrl] = useState('');
+  const [shopIndividualItems, setShopIndividualItems] = useState([]);
+  const [shopSubmitting, setShopSubmitting] = useState(false);
+  const shopFileRef = useRef(null);
 
   // Toast / notification
   const [toast, setToast] = useState(null);
@@ -64,6 +106,13 @@ export default function AdminPage({ onNavigate }) {
     const items = await getPortfolioProjects();
     setPortfolioList(items);
     setPortfolioLoading(false);
+  };
+
+  const loadShop = async () => {
+    setShopLoading(true);
+    const items = await getShopProducts();
+    setShopList(items);
+    setShopLoading(false);
   };
 
   // Auth verification check
@@ -93,7 +142,7 @@ export default function AdminPage({ onNavigate }) {
     showToast('Signed out of admin portal');
   };
 
-  // Initial data loading
+  // Initial data loading for both portfolio and shop
   useEffect(() => {
     let isMounted = true;
     if (authStatus.isAuthenticated) {
@@ -103,19 +152,58 @@ export default function AdminPage({ onNavigate }) {
           setPortfolioLoading(false);
         }
       });
+      getShopProducts().then((items) => {
+        if (isMounted) {
+          setShopList(items);
+          setShopLoading(false);
+        }
+      });
     }
     return () => {
       isMounted = false;
     };
   }, [authStatus.isAuthenticated]);
 
-  // Portfolio upload handlers
+  // =========================================================================
+  // PORTFOLIO HANDLERS
+  // =========================================================================
   const handlePortfolioFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       setPortfolioFile(file);
       setPortfolioPreviewUrl(URL.createObjectURL(file));
     }
+  };
+
+  const handleEditPortfolio = (item) => {
+    setEditingPortfolioId(item.id);
+    setNewPortfolio({
+      title: item.title,
+      subtitle: item.subtitle || '',
+      category: item.category || 'Residential',
+      display_order: item.displayOrder ?? 0,
+      is_published: item.isPublished ?? true
+    });
+    setPortfolioPreviewUrl(item.image);
+    setPortfolioFile(null);
+    setShowAddPortfolio(true);
+    setTimeout(() => {
+      portfolioFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
+  const handleCancelPortfolio = () => {
+    setEditingPortfolioId(null);
+    setNewPortfolio({
+      title: '',
+      subtitle: '',
+      category: 'Residential',
+      display_order: portfolioList.length + 1,
+      is_published: true
+    });
+    setPortfolioFile(null);
+    setPortfolioPreviewUrl('');
+    setShowAddPortfolio(false);
   };
 
   const handleCreatePortfolio = async (e) => {
@@ -131,44 +219,41 @@ export default function AdminPage({ onNavigate }) {
 
     setPortfolioSubmitting(true);
     try {
-      let imageUrl = '';
+      let imageUrl = portfolioPreviewUrl;
       if (portfolioFile) {
         try {
           imageUrl = await uploadImageToStorage('portfolio', portfolioFile);
         } catch {
           imageUrl = await fileToBase64(portfolioFile);
         }
-      } else {
-        imageUrl = portfolioPreviewUrl;
       }
 
-      const { error, isLocal } = await createPortfolioProject({
-        ...newPortfolio,
-        image_url: imageUrl
-      });
-
-      if (isLocal) {
-        showToast('Project uploaded and displayed in portfolio!', 'success');
-      } else if (error) {
-        throw error;
+      if (editingPortfolioId) {
+        const { error } = await updatePortfolioProject(editingPortfolioId, {
+          ...newPortfolio,
+          image_url: imageUrl
+        });
+        if (error) throw error;
+        showToast('Portfolio project updated successfully!');
       } else {
-        showToast('Portfolio project uploaded successfully!');
+        const { error, isLocal } = await createPortfolioProject({
+          ...newPortfolio,
+          image_url: imageUrl
+        });
+
+        if (isLocal) {
+          showToast('Project uploaded and displayed in portfolio!', 'success');
+        } else if (error) {
+          throw error;
+        } else {
+          showToast('Portfolio project uploaded successfully!');
+        }
       }
 
-      // Reset form
-      setNewPortfolio({
-        title: '',
-        subtitle: '',
-        category: 'Residential',
-        display_order: portfolioList.length + 1,
-        is_published: true
-      });
-      setPortfolioFile(null);
-      setPortfolioPreviewUrl('');
-      setShowAddPortfolio(false);
+      handleCancelPortfolio();
       loadPortfolio();
     } catch (err) {
-      showToast(`Error creating project: ${err.message}`, 'error');
+      showToast(`Error saving project: ${err.message}`, 'error');
     } finally {
       setPortfolioSubmitting(false);
     }
@@ -176,9 +261,12 @@ export default function AdminPage({ onNavigate }) {
 
   const handleDeletePortfolio = async (id, title) => {
     if (!window.confirm(`Are you sure you want to delete "${title}"?`)) return;
+    // Optimistic UI removal
+    setPortfolioList((prev) => prev.filter((item) => item.id !== id));
     const { error } = await deletePortfolioProject(id);
     if (error) {
       showToast(`Delete failed: ${error.message}`, 'error');
+      loadPortfolio();
     } else {
       showToast(`Deleted "${title}"`);
       loadPortfolio();
@@ -192,7 +280,242 @@ export default function AdminPage({ onNavigate }) {
         item.id === id ? { ...item, isPublished: !currentStatus } : item
       )
     );
-    showToast(`Project visibility updated`);
+    showToast('Project visibility updated');
+  };
+
+  // =========================================================================
+  // SHOP HANDLERS
+  // =========================================================================
+  const handleShopFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setShopFile(file);
+      setShopPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleAddShopIndividualItem = () => {
+    setShopIndividualItems((prev) => [
+      ...prev,
+      {
+        id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: '',
+        price: '',
+        image: '',
+        dimensions: '',
+        material: '',
+        description: '',
+        isUploading: false
+      }
+    ]);
+  };
+
+  const handleRemoveShopIndividualItem = (id) => {
+    setShopIndividualItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleUpdateShopIndividualItem = (id, fields) => {
+    setShopIndividualItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...fields } : item))
+    );
+  };
+
+  const handleIndividualItemFileChange = async (id, file) => {
+    if (!file) return;
+    handleUpdateShopIndividualItem(id, { isUploading: true });
+    try {
+      let url = '';
+      try {
+        url = await uploadImageToStorage('shop', file);
+      } catch {
+        url = await fileToBase64(file);
+      }
+      handleUpdateShopIndividualItem(id, { image: url, isUploading: false });
+      showToast('Item photo attached!');
+    } catch (err) {
+      handleUpdateShopIndividualItem(id, { isUploading: false });
+      showToast('Failed to attach item photo', 'error');
+    }
+  };
+
+  const handleEditShop = (item) => {
+    setEditingShopId(item.id);
+    const existingItems =
+      item.individual_items || item.individualItems || item.configurations || [];
+    setShopIndividualItems(
+      Array.isArray(existingItems)
+        ? existingItems.map((c, idx) => ({
+            id: c.id || `sub-${Date.now()}-${idx}`,
+            name: c.name || '',
+            price: c.price || '',
+            image: c.image || c.image_url || c.mainHeroImage || '',
+            dimensions: c.dimensions || c.size || '',
+            material: c.material || '',
+            description: c.description || '',
+            isUploading: false
+          }))
+        : []
+    );
+    setNewShopProduct({
+      name: item.name,
+      category: item.category || 'Bedroom',
+      tag: item.tag || '',
+      price: item.price || '',
+      description: item.description || '',
+      dimensions: item.dimensions || '',
+      material: item.material || '',
+      display_order: item.displayOrder ?? 0,
+      is_published: item.isPublished ?? true
+    });
+    setShopPreviewUrl(item.image);
+    setShopFile(null);
+    setShowAddShop(true);
+    setTimeout(() => {
+      shopFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
+  const handleCancelShop = () => {
+    setEditingShopId(null);
+    setShopIndividualItems([]);
+    setNewShopProduct({
+      name: '',
+      category: 'Bedroom',
+      tag: '',
+      price: '',
+      description: '',
+      dimensions: '',
+      material: '',
+      display_order: shopList.length + 1,
+      is_published: true
+    });
+    setShopFile(null);
+    setShopPreviewUrl('');
+    setShowAddShop(false);
+  };
+
+  const handleCreateShopProduct = async (e) => {
+    e.preventDefault();
+    if (!newShopProduct.name.trim()) {
+      showToast('Product name is required', 'error');
+      return;
+    }
+    if (!shopFile && !shopPreviewUrl) {
+      showToast('Please select a product image to upload', 'error');
+      return;
+    }
+
+    setShopSubmitting(true);
+    try {
+      let imageUrl = shopPreviewUrl;
+      if (shopFile) {
+        try {
+          imageUrl = await uploadImageToStorage('shop', shopFile);
+        } catch {
+          imageUrl = await fileToBase64(shopFile);
+        }
+      }
+
+      const formattedPrice = newShopProduct.price.trim()
+        ? newShopProduct.price.trim().startsWith('₹') ||
+          newShopProduct.price.trim().startsWith('Rs') ||
+          newShopProduct.price.toLowerCase().includes('price')
+          ? newShopProduct.price.trim()
+          : `₹ ${newShopProduct.price.trim()}`
+        : 'Price on request';
+
+      const tag = newShopProduct.tag.trim()
+        ? newShopProduct.tag.trim()
+        : `${newShopProduct.category} · Collection`;
+
+      // Clean and normalize individual items
+      const cleanedItems = shopIndividualItems
+        .filter((it) => (it.name && it.name.trim()) || it.image)
+        .map((it, idx) => {
+          const rawPrice = it.price ? it.price.trim() : '';
+          const formattedItemPrice = rawPrice
+            ? rawPrice.startsWith('₹') ||
+              rawPrice.startsWith('Rs') ||
+              rawPrice.toLowerCase().includes('price') ||
+              rawPrice.toLowerCase().includes('included')
+              ? rawPrice
+              : `₹ ${rawPrice}`
+            : 'Price on request';
+
+          return {
+            id: it.id || `sub-${Date.now()}-${idx}`,
+            name: it.name.trim() || `Component ${idx + 1}`,
+            price: formattedItemPrice,
+            image: it.image || imageUrl,
+            mainHeroImage: it.image || imageUrl,
+            dimensions: it.dimensions || '',
+            size: it.dimensions || '',
+            material: it.material || '',
+            description: it.description || ''
+          };
+        });
+
+      if (editingShopId) {
+        const { error } = await updateShopProduct(editingShopId, {
+          ...newShopProduct,
+          price: formattedPrice,
+          tag,
+          image_url: imageUrl,
+          individual_items: cleanedItems,
+          configurations: cleanedItems
+        });
+        if (error) throw error;
+        showToast('Shop product updated successfully!');
+      } else {
+        const { error, isLocal } = await createShopProduct({
+          ...newShopProduct,
+          price: formattedPrice,
+          tag,
+          image_url: imageUrl,
+          individual_items: cleanedItems,
+          configurations: cleanedItems
+        });
+
+        if (isLocal) {
+          showToast('Product uploaded and displayed in shop catalog!', 'success');
+        } else if (error) {
+          throw error;
+        } else {
+          showToast('Shop product uploaded successfully!');
+        }
+      }
+
+      handleCancelShop();
+      loadShop();
+    } catch (err) {
+      showToast(`Error saving product: ${err.message}`, 'error');
+    } finally {
+      setShopSubmitting(false);
+    }
+  };
+
+  const handleDeleteShop = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}" from the shop?`)) return;
+    // Optimistic UI removal
+    setShopList((prev) => prev.filter((item) => item.id !== id));
+    const { error } = await deleteShopProduct(id);
+    if (error) {
+      showToast(`Delete failed: ${error.message}`, 'error');
+      loadShop();
+    } else {
+      showToast(`Deleted "${name}"`);
+      loadShop();
+    }
+  };
+
+  const handleToggleShop = async (id, currentStatus) => {
+    await toggleShopPublished(id, currentStatus);
+    setShopList((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, isPublished: !currentStatus } : item
+      )
+    );
+    showToast('Product visibility updated');
   };
 
   // Filtered portfolio list
@@ -206,6 +529,20 @@ export default function AdminPage({ onNavigate }) {
       (p) =>
         p.title.toLowerCase().includes(portfolioSearch.toLowerCase()) ||
         p.subtitle.toLowerCase().includes(portfolioSearch.toLowerCase())
+    );
+
+  // Filtered shop list
+  const filteredShop = shopList
+    .filter((p) =>
+      shopCategoryFilter === 'All'
+        ? true
+        : p.category?.toLowerCase() === shopCategoryFilter.toLowerCase()
+    )
+    .filter(
+      (p) =>
+        p.name?.toLowerCase().includes(shopSearch.toLowerCase()) ||
+        p.tag?.toLowerCase().includes(shopSearch.toLowerCase()) ||
+        p.category?.toLowerCase().includes(shopSearch.toLowerCase())
     );
 
   // Authentication loading screen
@@ -231,6 +568,7 @@ export default function AdminPage({ onNavigate }) {
             loading: false
           });
           loadPortfolio();
+          loadShop();
           showToast('Welcome back, Administrator');
         }}
         onBackToSite={() => onNavigate('home')}
@@ -291,281 +629,919 @@ export default function AdminPage({ onNavigate }) {
 
       {/* Main Portal Container */}
       <main className="admin-main-container">
-        {/* Navigation / Header Row */}
+        {/* Navigation Tabs Row */}
         <div className="admin-tabs-row">
           <div className="admin-nav-tabs">
-            <div className="admin-tab-btn active">
+            <button
+              type="button"
+              className={`admin-tab-btn ${activeTab === 'portfolio' ? 'active' : ''}`}
+              onClick={() => setActiveTab('portfolio')}
+            >
               <ImageIcon size={18} />
               <span>Portfolio Projects ({portfolioList.length})</span>
-            </div>
+            </button>
+            <button
+              type="button"
+              className={`admin-tab-btn ${activeTab === 'shop' ? 'active' : ''}`}
+              onClick={() => setActiveTab('shop')}
+            >
+              <ShoppingBag size={18} />
+              <span>Shop Products ({shopList.length})</span>
+            </button>
           </div>
 
           <div className="admin-tab-quick-action">
-            <button
-              className="admin-primary-btn"
-              onClick={() => setShowAddPortfolio(!showAddPortfolio)}
-            >
-              <Plus size={16} />
-              <span>
-                {showAddPortfolio ? 'Cancel Upload' : 'Upload Portfolio Project'}
-              </span>
-            </button>
+            {activeTab === 'portfolio' ? (
+              <button
+                className="admin-primary-btn"
+                onClick={() => {
+                  if (showAddPortfolio) {
+                    handleCancelPortfolio();
+                  } else {
+                    setEditingPortfolioId(null);
+                    setShowAddPortfolio(true);
+                  }
+                }}
+              >
+                <Plus size={16} />
+                <span>
+                  {showAddPortfolio ? 'Cancel Form' : 'Upload Portfolio Project'}
+                </span>
+              </button>
+            ) : (
+              <button
+                className="admin-primary-btn"
+                onClick={() => {
+                  if (showAddShop) {
+                    handleCancelShop();
+                  } else {
+                    setEditingShopId(null);
+                    setShowAddShop(true);
+                  }
+                }}
+              >
+                <Plus size={16} />
+                <span>
+                  {showAddShop ? 'Cancel Form' : 'Upload Product to Shop'}
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* ================================================================= */}
-        {/* PORTFOLIO MANAGEMENT */}
+        {/* 1. PORTFOLIO MANAGEMENT */}
         {/* ================================================================= */}
-        <div className="admin-view-section">
-          {/* Upload Collapsible Card */}
-          {showAddPortfolio && (
-            <div className="admin-form-card">
-              <div className="admin-form-header">
-                <div className="admin-form-title-wrap">
-                  <UploadCloud className="admin-icon-gold" size={24} />
-                  <div>
-                    <h2 className="admin-form-heading">Upload New Portfolio Project</h2>
-                    <p className="admin-form-sub">
-                      Upload photography for the website portfolio. Uploaded projects immediately display in the portfolio section.
-                    </p>
+        {activeTab === 'portfolio' && (
+          <div className="admin-view-section">
+            {/* Upload / Edit Collapsible Card */}
+            {showAddPortfolio && (
+              <div className="admin-form-card" ref={portfolioFormRef}>
+                <div className="admin-form-header">
+                  <div className="admin-form-title-wrap">
+                    {editingPortfolioId ? (
+                      <Pencil className="admin-icon-gold" size={24} />
+                    ) : (
+                      <UploadCloud className="admin-icon-gold" size={24} />
+                    )}
+                    <div>
+                      <h2 className="admin-form-heading">
+                        {editingPortfolioId ? 'Edit Portfolio Project' : 'Upload New Portfolio Project'}
+                      </h2>
+                      <p className="admin-form-sub">
+                        {editingPortfolioId
+                          ? 'Update project details, category, or replace the photograph.'
+                          : 'Upload photography for the website portfolio. Uploaded projects immediately display in the portfolio section.'}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <form onSubmit={handleCreatePortfolio} className="admin-upload-form">
-                <div className="admin-form-grid">
-                  {/* Image dropzone */}
-                  <div className="admin-dropzone-col">
-                    <label className="admin-field-label">Project Photograph *</label>
-                    <div
-                      className={`admin-dropzone ${portfolioPreviewUrl ? 'has-preview' : ''}`}
-                      onClick={() => portfolioFileRef.current?.click()}
-                    >
-                      <input
-                        type="file"
-                        ref={portfolioFileRef}
-                        onChange={handlePortfolioFileChange}
-                        accept="image/*"
-                        style={{ display: 'none' }}
-                      />
-                      {portfolioPreviewUrl ? (
-                        <div className="admin-dropzone-preview">
-                          <img src={portfolioPreviewUrl} alt="Upload Preview" />
-                          <div className="admin-dropzone-overlay">
-                            <RefreshCw size={20} />
-                            <span>Click to change photograph</span>
+                <form onSubmit={handleCreatePortfolio} className="admin-upload-form">
+                  <div className="admin-form-grid">
+                    {/* Image dropzone */}
+                    <div className="admin-dropzone-col">
+                      <label className="admin-field-label">Project Photograph *</label>
+                      <div
+                        className={`admin-dropzone ${portfolioPreviewUrl ? 'has-preview' : ''}`}
+                        onClick={() => portfolioFileRef.current?.click()}
+                      >
+                        <input
+                          type="file"
+                          ref={portfolioFileRef}
+                          onChange={handlePortfolioFileChange}
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                        />
+                        {portfolioPreviewUrl ? (
+                          <div className="admin-dropzone-preview">
+                            <img src={portfolioPreviewUrl} alt="Upload Preview" />
+                            <div className="admin-dropzone-overlay">
+                              <RefreshCw size={20} />
+                              <span>Click to change photograph</span>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="admin-dropzone-empty">
-                          <UploadCloud size={44} className="admin-icon-muted" />
-                          <div className="admin-dropzone-txt">
-                            <strong>Click to choose image</strong> or drag and drop
+                        ) : (
+                          <div className="admin-dropzone-empty">
+                            <UploadCloud size={44} className="admin-icon-muted" />
+                            <div className="admin-dropzone-txt">
+                              <strong>Click to choose image</strong> or drag and drop
+                            </div>
+                            <span className="admin-dropzone-hint">
+                              JPG, PNG, WebP up to 15MB
+                            </span>
                           </div>
-                          <span className="admin-dropzone-hint">
-                            JPG, PNG, WebP up to 15MB
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Metadata fields */}
-                  <div className="admin-fields-col">
-                    <div className="admin-field-row">
-                      <label className="admin-field-label">Project Title *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Minimalist Villa Horizon"
-                        value={newPortfolio.title}
-                        onChange={(e) =>
-                          setNewPortfolio({ ...newPortfolio, title: e.target.value })
-                        }
-                        className="admin-input-text"
-                      />
+                        )}
+                      </div>
                     </div>
 
-                    <div className="admin-field-two-col">
-                      <div>
-                        <label className="admin-field-label">Category *</label>
-                        <select
-                          value={newPortfolio.category}
+                    {/* Metadata fields */}
+                    <div className="admin-fields-col">
+                      <div className="admin-field-row">
+                        <label className="admin-field-label">Project Title *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Minimalist Villa Horizon"
+                          value={newPortfolio.title}
                           onChange={(e) =>
-                            setNewPortfolio({
-                              ...newPortfolio,
-                              category: e.target.value
-                            })
+                            setNewPortfolio({ ...newPortfolio, title: e.target.value })
                           }
-                          className="admin-select"
-                        >
-                          <option value="Residential">Residential</option>
-                          <option value="Commercial">Commercial</option>
-                          <option value="Construction">Construction</option>
-                          <option value="Modular Kitchen">Modular Kitchen</option>
-                        </select>
+                          className="admin-input-text"
+                        />
                       </div>
 
-                      <div>
-                        <label className="admin-field-label">Display Order</label>
+                      <div className="admin-field-two-col">
+                        <div>
+                          <label className="admin-field-label">Category *</label>
+                          <select
+                            value={newPortfolio.category}
+                            onChange={(e) =>
+                              setNewPortfolio({
+                                ...newPortfolio,
+                                category: e.target.value
+                              })
+                            }
+                            className="admin-select"
+                          >
+                            <option value="Residential">Residential</option>
+                            <option value="Commercial">Commercial</option>
+                            <option value="Construction">Construction</option>
+                            <option value="Modular Kitchen">Modular Kitchen</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="admin-field-label">Display Order</label>
+                          <input
+                            type="number"
+                            value={newPortfolio.display_order}
+                            onChange={(e) =>
+                              setNewPortfolio({
+                                ...newPortfolio,
+                                display_order: parseInt(e.target.value) || 0
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-field-row">
+                        <label className="admin-field-label">Subtitle / Description</label>
                         <input
-                          type="number"
-                          value={newPortfolio.display_order}
+                          type="text"
+                          placeholder="e.g. Architectural balance & bespoke wood millwork"
+                          value={newPortfolio.subtitle}
                           onChange={(e) =>
                             setNewPortfolio({
                               ...newPortfolio,
-                              display_order: parseInt(e.target.value) || 0
+                              subtitle: e.target.value
                             })
                           }
                           className="admin-input-text"
                         />
                       </div>
-                    </div>
 
-                    <div className="admin-field-row">
-                      <label className="admin-field-label">Subtitle / Description</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Architectural balance & bespoke wood millwork"
-                        value={newPortfolio.subtitle}
-                        onChange={(e) =>
-                          setNewPortfolio({
-                            ...newPortfolio,
-                            subtitle: e.target.value
-                          })
+                      <div className="admin-form-actions">
+                        <button
+                          type="button"
+                          onClick={handleCancelPortfolio}
+                          className="admin-cancel-btn"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="admin-submit-btn"
+                          disabled={portfolioSubmitting}
+                        >
+                          {portfolioSubmitting ? (
+                            <>
+                              <RefreshCw size={16} className="spin-animate" />
+                              <span>Saving...</span>
+                            </>
+                          ) : editingPortfolioId ? (
+                            <>
+                              <CheckCircle2 size={16} />
+                              <span>Save Changes</span>
+                            </>
+                          ) : (
+                            <>
+                              <UploadCloud size={16} />
+                              <span>Upload Project</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Filter & Search Bar */}
+            <div className="admin-filter-bar">
+              <div className="admin-category-pills">
+                {['All', 'Residential', 'Commercial', 'Construction', 'Modular Kitchen'].map(
+                  (cat) => (
+                    <button
+                      key={cat}
+                      className={`admin-cat-pill ${
+                        portfolioCategoryFilter === cat ? 'active' : ''
+                      }`}
+                      onClick={() => setPortfolioCategoryFilter(cat)}
+                    >
+                      {cat}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <div className="admin-search-wrap">
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={portfolioSearch}
+                  onChange={(e) => setPortfolioSearch(e.target.value)}
+                  className="admin-search-input"
+                />
+              </div>
+            </div>
+
+            {/* Projects Grid */}
+            {portfolioLoading ? (
+              <div className="admin-loading-box">
+                <RefreshCw size={24} className="spin-animate" />
+                <span>Loading portfolio items...</span>
+              </div>
+            ) : filteredPortfolio.length === 0 ? (
+              <div className="admin-empty-box">
+                <ImageIcon size={48} className="admin-icon-muted" />
+                <h3>No portfolio projects found</h3>
+                <p>Click "Upload Portfolio Project" above to add your first item.</p>
+              </div>
+            ) : (
+              <div className="admin-items-grid">
+                {filteredPortfolio.map((item) => (
+                  <div key={item.id} className="admin-item-card">
+                    <div className="admin-card-thumb-wrap">
+                      <img src={item.image} alt={item.title} loading="lazy" />
+                      <span className="admin-card-category-badge">{item.category}</span>
+                      <button
+                        className={`admin-status-badge ${
+                          item.isPublished ? 'published' : 'draft'
+                        }`}
+                        onClick={() =>
+                          handleTogglePortfolio(item.id, item.isPublished)
                         }
-                        className="admin-input-text"
-                      />
-                    </div>
-
-                    <div className="admin-form-actions">
-                      <button
-                        type="button"
-                        onClick={() => setShowAddPortfolio(false)}
-                        className="admin-cancel-btn"
+                        title="Click to toggle publish status"
                       >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="admin-submit-btn"
-                        disabled={portfolioSubmitting}
-                      >
-                        {portfolioSubmitting ? (
+                        {item.isPublished ? (
                           <>
-                            <RefreshCw size={16} className="spin-animate" />
-                            <span>Uploading...</span>
+                            <Eye size={12} />
+                            <span>Live</span>
                           </>
                         ) : (
                           <>
-                            <UploadCloud size={16} />
-                            <span>Upload Project</span>
+                            <EyeOff size={12} />
+                            <span>Draft</span>
                           </>
                         )}
                       </button>
                     </div>
-                  </div>
-                </div>
-              </form>
-            </div>
-          )}
 
-          {/* Filter & Search Bar */}
-          <div className="admin-filter-bar">
-            <div className="admin-category-pills">
-              {['All', 'Residential', 'Commercial', 'Construction', 'Modular Kitchen'].map(
-                (cat) => (
-                  <button
-                    key={cat}
-                    className={`admin-cat-pill ${
-                      portfolioCategoryFilter === cat ? 'active' : ''
-                    }`}
-                    onClick={() => setPortfolioCategoryFilter(cat)}
-                  >
-                    {cat}
-                  </button>
-                )
-              )}
-            </div>
-
-            <div className="admin-search-wrap">
-              <Search size={16} />
-              <input
-                type="text"
-                placeholder="Search projects..."
-                value={portfolioSearch}
-                onChange={(e) => setPortfolioSearch(e.target.value)}
-                className="admin-search-input"
-              />
-            </div>
-          </div>
-
-          {/* Projects Grid */}
-          {portfolioLoading ? (
-            <div className="admin-loading-box">
-              <RefreshCw size={24} className="spin-animate" />
-              <span>Loading portfolio items...</span>
-            </div>
-          ) : filteredPortfolio.length === 0 ? (
-            <div className="admin-empty-box">
-              <ImageIcon size={48} className="admin-icon-muted" />
-              <h3>No portfolio projects found</h3>
-              <p>Click "Upload Portfolio Project" above to add your first item.</p>
-            </div>
-          ) : (
-            <div className="admin-items-grid">
-              {filteredPortfolio.map((item) => (
-                <div key={item.id} className="admin-item-card">
-                  <div className="admin-card-thumb-wrap">
-                    <img src={item.image} alt={item.title} loading="lazy" />
-                    <span className="admin-card-category-badge">{item.category}</span>
-                    <button
-                      className={`admin-status-badge ${
-                        item.isPublished ? 'published' : 'draft'
-                      }`}
-                      onClick={() =>
-                        handleTogglePortfolio(item.id, item.isPublished)
-                      }
-                      title="Click to toggle publish status"
-                    >
-                      {item.isPublished ? (
-                        <>
-                          <Eye size={12} />
-                          <span>Live</span>
-                        </>
-                      ) : (
-                        <>
-                          <EyeOff size={12} />
-                          <span>Draft</span>
-                        </>
+                    <div className="admin-card-body">
+                      <h3 className="admin-card-title">{item.title}</h3>
+                      {item.subtitle && (
+                        <p className="admin-card-subtitle">{item.subtitle}</p>
                       )}
-                    </button>
+
+                      <div className="admin-card-meta-row">
+                        <span className="admin-order-tag">Order #{item.displayOrder}</span>
+                        <div className="admin-card-actions">
+                          <button
+                            onClick={() => handleEditPortfolio(item)}
+                            className="admin-edit-btn"
+                            title="Edit this project"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeletePortfolio(item.id, item.title)
+                            }
+                            className="admin-delete-btn"
+                            title="Delete this project"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-                  <div className="admin-card-body">
-                    <h3 className="admin-card-title">{item.title}</h3>
-                    {item.subtitle && (
-                      <p className="admin-card-subtitle">{item.subtitle}</p>
+        {/* ================================================================= */}
+        {/* 2. SHOP PRODUCTS MANAGEMENT */}
+        {/* ================================================================= */}
+        {activeTab === 'shop' && (
+          <div className="admin-view-section">
+            {/* Upload / Edit Collapsible Card */}
+            {showAddShop && (
+              <div className="admin-form-card" ref={shopFormRef}>
+                <div className="admin-form-header">
+                  <div className="admin-form-title-wrap">
+                    {editingShopId ? (
+                      <Pencil className="admin-icon-gold" size={24} />
+                    ) : (
+                      <ShoppingBag className="admin-icon-gold" size={24} />
                     )}
-
-                    <div className="admin-card-meta-row">
-                      <span className="admin-order-tag">Order #{item.displayOrder}</span>
-                      <button
-                        onClick={() =>
-                          handleDeletePortfolio(item.id, item.title)
-                        }
-                        className="admin-delete-btn"
-                        title="Delete this project"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                    <div>
+                      <h2 className="admin-form-heading">
+                        {editingShopId ? 'Edit Shop Product' : 'Upload New Shop Product'}
+                      </h2>
+                      <p className="admin-form-sub">
+                        {editingShopId
+                          ? 'Update product specifications, pricing, dimensions, or replace the photograph.'
+                          : 'Upload custom furniture, millwork, or collection pieces to the shop catalog. Uploaded products immediately appear on the shop page.'}
+                      </p>
                     </div>
                   </div>
                 </div>
-              ))}
+
+                <form onSubmit={handleCreateShopProduct} className="admin-upload-form">
+                  <div className="admin-form-grid">
+                    {/* Image dropzone */}
+                    <div className="admin-dropzone-col">
+                      <label className="admin-field-label">Product Photograph *</label>
+                      <div
+                        className={`admin-dropzone ${shopPreviewUrl ? 'has-preview' : ''}`}
+                        onClick={() => shopFileRef.current?.click()}
+                      >
+                        <input
+                          type="file"
+                          ref={shopFileRef}
+                          onChange={handleShopFileChange}
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                        />
+                        {shopPreviewUrl ? (
+                          <div className="admin-dropzone-preview">
+                            <img src={shopPreviewUrl} alt="Product Preview" />
+                            <div className="admin-dropzone-overlay">
+                              <RefreshCw size={20} />
+                              <span>Click to change photograph</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="admin-dropzone-empty">
+                            <UploadCloud size={44} className="admin-icon-muted" />
+                            <div className="admin-dropzone-txt">
+                              <strong>Click to choose image</strong> or drag and drop
+                            </div>
+                            <span className="admin-dropzone-hint">
+                              JPG, PNG, WebP up to 15MB
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Metadata fields */}
+                    <div className="admin-fields-col">
+                      <div className="admin-field-row">
+                        <label className="admin-field-label">Product Name *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Minimalist Fluted Oak Wardrobe"
+                          value={newShopProduct.name}
+                          onChange={(e) =>
+                            setNewShopProduct({ ...newShopProduct, name: e.target.value })
+                          }
+                          className="admin-input-text"
+                        />
+                      </div>
+
+                      <div className="admin-field-two-col">
+                        <div>
+                          <label className="admin-field-label">Category *</label>
+                          <select
+                            value={newShopProduct.category}
+                            onChange={(e) =>
+                              setNewShopProduct({
+                                ...newShopProduct,
+                                category: e.target.value
+                              })
+                            }
+                            className="admin-select"
+                          >
+                            <option value="Bedroom">Bedroom</option>
+                            <option value="Living room">Living room</option>
+                            <option value="Kitchen">Kitchen</option>
+                            <option value="Workspace">Workspace</option>
+                            <option value="Dining">Dining</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="admin-field-label">Price (INR or On Request)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. ₹ 45,000 or Price on request"
+                            value={newShopProduct.price}
+                            onChange={(e) =>
+                              setNewShopProduct({
+                                ...newShopProduct,
+                                price: e.target.value
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-field-two-col">
+                        <div>
+                          <label className="admin-field-label">Badge / Sub-tag</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Bedroom · Custom interior"
+                            value={newShopProduct.tag}
+                            onChange={(e) =>
+                              setNewShopProduct({
+                                ...newShopProduct,
+                                tag: e.target.value
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="admin-field-label">Display Order</label>
+                          <input
+                            type="number"
+                            value={newShopProduct.display_order}
+                            onChange={(e) =>
+                              setNewShopProduct({
+                                ...newShopProduct,
+                                display_order: parseInt(e.target.value) || 0
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-field-two-col">
+                        <div>
+                          <label className="admin-field-label">Dimensions / Size</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 120x210 cm or Custom"
+                            value={newShopProduct.dimensions}
+                            onChange={(e) =>
+                              setNewShopProduct({
+                                ...newShopProduct,
+                                dimensions: e.target.value
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="admin-field-label">Material / Finish</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Solid oak & brass hardware"
+                            value={newShopProduct.material}
+                            onChange={(e) =>
+                              setNewShopProduct({
+                                ...newShopProduct,
+                                material: e.target.value
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-field-row">
+                        <label className="admin-field-label">Description (Optional)</label>
+                        <textarea
+                          rows={2}
+                          placeholder="Brief description of craftsmanship, features and bespoke customization options..."
+                          value={newShopProduct.description}
+                          onChange={(e) =>
+                            setNewShopProduct({
+                              ...newShopProduct,
+                              description: e.target.value
+                            })
+                          }
+                          className="admin-textarea"
+                        />
+                      </div>
+
+                      {/* INDIVIDUAL ITEMS BUILDER */}
+                      <div className="admin-individual-items-section">
+                        <div className="admin-individual-items-header">
+                          <div className="admin-section-subtitle-wrap">
+                            <h3>
+                              Individual Items & Components
+                              <span className="admin-items-count-badge">
+                                {shopIndividualItems.length}{' '}
+                                {shopIndividualItems.length === 1 ? 'item' : 'items'}
+                              </span>
+                            </h3>
+                            <span className="admin-field-hint">
+                              Add separate pieces (e.g. Wardrobe, Bed frame, Nightstand, Coffee table) that buyers can inspect or select individually on the product page. Unlimited items can be added.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddShopIndividualItem}
+                            className="admin-add-item-btn"
+                          >
+                            <Plus size={16} />
+                            <span>Add Individual Item</span>
+                          </button>
+                        </div>
+
+                        {shopIndividualItems.length === 0 ? (
+                          <div className="admin-empty-items-box">
+                            <Package size={28} className="admin-empty-icon" />
+                            <p>No individual items added yet.</p>
+                            <span>
+                              Click &quot;Add Individual Item&quot; to add separate components with their own photos, prices, and specifications.
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="admin-individual-items-list">
+                            {shopIndividualItems.map((item, idx) => (
+                              <div key={item.id} className="admin-individual-item-card">
+                                <div className="admin-item-card-top">
+                                  <span className="admin-item-num-tag">
+                                    <Package size={14} /> Item #{idx + 1}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveShopIndividualItem(item.id)}
+                                    className="admin-item-delete-btn"
+                                    title="Remove this item"
+                                  >
+                                    <Trash2 size={14} />
+                                    <span>Remove</span>
+                                  </button>
+                                </div>
+
+                                <div className="admin-item-card-body">
+                                  {/* Item Image Upload */}
+                                  <div className="admin-item-image-col">
+                                    {item.image ? (
+                                      <div className="admin-item-image-preview">
+                                        <img
+                                          src={item.image}
+                                          alt={item.name || `Item ${idx + 1}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleUpdateShopIndividualItem(item.id, {
+                                              image: ''
+                                            })
+                                          }
+                                          className="admin-item-img-remove-btn"
+                                          title="Remove photo"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <label className="admin-item-upload-box">
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) =>
+                                            handleIndividualItemFileChange(
+                                              item.id,
+                                              e.target.files?.[0]
+                                            )
+                                          }
+                                          style={{ display: 'none' }}
+                                        />
+                                        {item.isUploading ? (
+                                          <RefreshCw
+                                            size={20}
+                                            className="spin-animate"
+                                          />
+                                        ) : (
+                                          <>
+                                            <ImageIcon size={22} />
+                                            <span>Upload Photo</span>
+                                          </>
+                                        )}
+                                      </label>
+                                    )}
+                                  </div>
+
+                                  {/* Item Fields */}
+                                  <div className="admin-item-fields-col">
+                                    <div className="admin-field-two-col">
+                                      <div>
+                                        <label className="admin-field-label">
+                                          Item Name *
+                                        </label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. 4-Door Wardrobe or Bedside Box"
+                                          value={item.name}
+                                          onChange={(e) =>
+                                            handleUpdateShopIndividualItem(item.id, {
+                                              name: e.target.value
+                                            })
+                                          }
+                                          className="admin-input-text"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="admin-field-label">
+                                          Item Price
+                                        </label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. ₹ 24,500 or Included"
+                                          value={item.price}
+                                          onChange={(e) =>
+                                            handleUpdateShopIndividualItem(item.id, {
+                                              price: e.target.value
+                                            })
+                                          }
+                                          className="admin-input-text"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="admin-field-two-col">
+                                      <div>
+                                        <label className="admin-field-label">
+                                          Dimensions / Size
+                                        </label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. 120x210 cm"
+                                          value={item.dimensions || item.size || ''}
+                                          onChange={(e) =>
+                                            handleUpdateShopIndividualItem(item.id, {
+                                              dimensions: e.target.value,
+                                              size: e.target.value
+                                            })
+                                          }
+                                          className="admin-input-text"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="admin-field-label">
+                                          Material / Finish
+                                        </label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. Natural veneer & brass"
+                                          value={item.material || ''}
+                                          onChange={(e) =>
+                                            handleUpdateShopIndividualItem(item.id, {
+                                              material: e.target.value
+                                            })
+                                          }
+                                          className="admin-input-text"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="admin-field-label">
+                                        Description (Optional)
+                                      </label>
+                                      <input
+                                        type="text"
+                                        placeholder="Brief description of this component..."
+                                        value={item.description || ''}
+                                        onChange={(e) =>
+                                          handleUpdateShopIndividualItem(item.id, {
+                                            description: e.target.value
+                                          })
+                                        }
+                                        className="admin-input-text"
+                                      />
+                                    </div>
+
+                                    {!item.image && (
+                                      <div>
+                                        <label className="admin-field-label">
+                                          Or Image URL
+                                        </label>
+                                        <input
+                                          type="text"
+                                          placeholder="https://... or /assets/images/..."
+                                          value={item.image || ''}
+                                          onChange={(e) =>
+                                            handleUpdateShopIndividualItem(item.id, {
+                                              image: e.target.value
+                                            })
+                                          }
+                                          className="admin-input-text"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="admin-form-actions">
+                        <button
+                          type="button"
+                          onClick={handleCancelShop}
+                          className="admin-cancel-btn"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="admin-submit-btn"
+                          disabled={shopSubmitting}
+                        >
+                          {shopSubmitting ? (
+                            <>
+                              <RefreshCw size={16} className="spin-animate" />
+                              <span>Saving...</span>
+                            </>
+                          ) : editingShopId ? (
+                            <>
+                              <CheckCircle2 size={16} />
+                              <span>Save Changes</span>
+                            </>
+                          ) : (
+                            <>
+                              <UploadCloud size={16} />
+                              <span>Upload Product to Shop</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Filter & Search Bar */}
+            <div className="admin-filter-bar">
+              <div className="admin-category-pills">
+                {['All', 'Bedroom', 'Living room', 'Kitchen', 'Workspace', 'Dining'].map(
+                  (cat) => (
+                    <button
+                      key={cat}
+                      className={`admin-cat-pill ${
+                        shopCategoryFilter === cat ? 'active' : ''
+                      }`}
+                      onClick={() => setShopCategoryFilter(cat)}
+                    >
+                      {cat}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <div className="admin-search-wrap">
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={shopSearch}
+                  onChange={(e) => setShopSearch(e.target.value)}
+                  className="admin-search-input"
+                />
+              </div>
             </div>
-          )}
-        </div>
+
+            {/* Products Grid */}
+            {shopLoading ? (
+              <div className="admin-loading-box">
+                <RefreshCw size={24} className="spin-animate" />
+                <span>Loading shop products...</span>
+              </div>
+            ) : filteredShop.length === 0 ? (
+              <div className="admin-empty-box">
+                <ShoppingBag size={48} className="admin-icon-muted" />
+                <h3>No shop products found</h3>
+                <p>Click "Upload Product to Shop" above to add your first product.</p>
+              </div>
+            ) : (
+              <div className="admin-items-grid">
+                {filteredShop.map((item) => (
+                  <div key={item.id} className="admin-item-card">
+                    <div className="admin-card-thumb-wrap">
+                      <img src={item.image} alt={item.name} loading="lazy" />
+                      <span className="admin-card-category-badge">{item.category}</span>
+                      <button
+                        className={`admin-status-badge ${
+                          item.isPublished ? 'published' : 'draft'
+                        }`}
+                        onClick={() =>
+                          handleToggleShop(item.id, item.isPublished)
+                        }
+                        title="Click to toggle publish status"
+                      >
+                        {item.isPublished ? (
+                          <>
+                            <Eye size={12} />
+                            <span>Live</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff size={12} />
+                            <span>Draft</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="admin-card-body">
+                      <div className="admin-card-price-row">
+                        <span className="admin-product-price-pill">{item.price}</span>
+                        {(item.individual_items?.length > 0 || item.configurations?.length > 0) && (
+                          <span className="admin-items-count-indicator">
+                            {(item.individual_items || item.configurations).length}{' '}
+                            {(item.individual_items || item.configurations).length === 1
+                              ? 'component'
+                              : 'components'}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="admin-card-title">{item.name}</h3>
+                      {item.tag && (
+                        <p className="admin-card-subtitle">{item.tag}</p>
+                      )}
+
+                      <div className="admin-card-meta-row">
+                        <span className="admin-order-tag">Order #{item.displayOrder}</span>
+                        <div className="admin-card-actions">
+                          <button
+                            onClick={() => handleEditShop(item)}
+                            className="admin-edit-btn"
+                            title="Edit this product"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeleteShop(item.id, item.name)
+                            }
+                            className="admin-delete-btn"
+                            title="Delete this product"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
