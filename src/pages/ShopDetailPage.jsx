@@ -178,7 +178,7 @@ export default function ShopDetailPage({ onNavigate, onOpenConsultation, selecte
     if (!items.some((i) => i.id === selectedItemId)) {
       setSelectedItemId(items[0]?.id || 'full-set');
     }
-  }, [selectedProduct, currentProduct]);
+  }, [selectedProduct, currentProduct, items]);
 
   const activeItem = items.find((c) => c.id === selectedItemId) || items[0] || {};
 
@@ -277,7 +277,6 @@ export default function ShopDetailPage({ onNavigate, onOpenConsultation, selecte
               <div className="shop-detail-item-price">{formatPriceWithRs(activeItem.price)}</div>
             </div>
 
-            {/* Quick Specs */}
             <div className="shop-detail-quick-specs">
               <div className="quick-spec-row">
                 <span className="spec-label">Size</span>
@@ -341,11 +340,6 @@ export default function ShopDetailPage({ onNavigate, onOpenConsultation, selecte
           <div className="individual-items-header-row">
             <div>
               <h2 className="individual-items-heading">Select Individual Items</h2>
-              <p className="individual-items-subtitle">
-                {items.length > 1
-                  ? 'Choose an individual piece below to inspect specifications and enquire separately, or select the complete set.'
-                  : 'Select an item to view detailed specifications and enquire.'}
-              </p>
             </div>
             <span className="individual-items-count">
               {items.length} {items.length === 1 ? 'Configuration' : 'Configurations'}
@@ -372,9 +366,6 @@ export default function ShopDetailPage({ onNavigate, onOpenConsultation, selecte
                   <div className="item-card-meta">
                     <h3 className="item-card-title">{item.name}</h3>
                     <div className="item-card-price">{formatPriceWithRs(item.price)}</div>
-                    {item.size && (
-                      <span className="item-card-spec-pill">{item.size}</span>
-                    )}
                   </div>
 
                   <button
