@@ -86,6 +86,13 @@ create table if not exists public.portfolio_projects (
   updated_at timestamptz not null default now()
 );
 
+-- Idempotent column additions for existing deployments
+alter table public.portfolio_projects
+  add column if not exists the_idea_title text,
+  add column if not exists the_idea_description text,
+  add column if not exists specifications jsonb not null default '[]'::jsonb,
+  add column if not exists gallery_images jsonb not null default '[]'::jsonb;
+
 -- Performance & filtering indexes for public queries
 create index if not exists idx_portfolio_published_category_order
   on public.portfolio_projects (is_published, category, display_order asc, created_at desc);

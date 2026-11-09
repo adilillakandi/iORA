@@ -4,7 +4,7 @@ export const portfolioData = {
     intro: 'Explore our curated portfolio of custom residential, commercial, and retail transformations.'
   },
 
-  categories: ['All works', 'Residential', 'Commercial', 'Construction'],
+  categories: ['All works', 'Residential', 'Commercial', 'Construction', 'Modular Kitchen', 'Turnkey'],
 
   projects: [
     {

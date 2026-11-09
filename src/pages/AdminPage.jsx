@@ -76,12 +76,29 @@ export default function AdminPage({ onNavigate }) {
     subtitle: '',
     category: 'Residential',
     display_order: 0,
-    is_published: true
+    is_published: true,
+    the_idea_title: '',
+    the_idea_description: '',
+    specifications_note: 'Illustrative project narrative and sample specifications. Not verified client details.'
   });
   const [portfolioFile, setPortfolioFile] = useState(null);
   const [portfolioPreviewUrl, setPortfolioPreviewUrl] = useState('');
   const [portfolioSubmitting, setPortfolioSubmitting] = useState(false);
   const portfolioFileRef = useRef(null);
+
+  // Specifications state for portfolio project
+  const [portfolioSpecs, setPortfolioSpecs] = useState([
+    { id: 'spec-1', label: 'AREA', value: '' },
+    { id: 'spec-2', label: 'LOCATION', value: '' },
+    { id: 'spec-3', label: 'TYPOLOGY', value: '' },
+    { id: 'spec-4', label: 'YEAR', value: '' },
+    { id: 'spec-5', label: 'SCOPE', value: '' },
+    { id: 'spec-6', label: 'PALETTE', value: '' }
+  ]);
+
+  // Gallery items state for portfolio project
+  const [portfolioGallery, setPortfolioGallery] = useState([]);
+  const portfolioGalleryInputRef = useRef(null);
 
   // Shop items state
   const [shopList, setShopList] = useState([]);
@@ -278,16 +295,162 @@ export default function AdminPage({ onNavigate }) {
     }
   };
 
+  const handleAddPortfolioSpec = () => {
+    setPortfolioSpecs((prev) => [
+      ...prev,
+      {
+        id: `spec-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        label: '',
+        value: ''
+      }
+    ]);
+  };
+
+  const handleRemovePortfolioSpec = (id) => {
+    setPortfolioSpecs((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const handleUpdatePortfolioSpec = (id, fields) => {
+    setPortfolioSpecs((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...fields } : s))
+    );
+  };
+
+  const handleAddPortfolioGalleryItem = () => {
+    setPortfolioGallery((prev) => [
+      ...prev,
+      {
+        id: `gal-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        image: '',
+        alt: '',
+        isUploading: false
+      }
+    ]);
+  };
+
+  const handleRemovePortfolioGalleryItem = (id) => {
+    setPortfolioGallery((prev) => prev.filter((g) => g.id !== id));
+  };
+
+  const handleUpdatePortfolioGalleryItem = (id, fields) => {
+    setPortfolioGallery((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, ...fields } : g))
+    );
+  };
+
+  const handlePortfolioGalleryFileChange = async (id, file) => {
+    if (!file) return;
+    handleUpdatePortfolioGalleryItem(id, { isUploading: true });
+    try {
+      let url = '';
+      try {
+        url = await uploadImageToStorage('portfolio', file);
+      } catch {
+        url = await fileToBase64(file);
+      }
+      handleUpdatePortfolioGalleryItem(id, { image: url, isUploading: false });
+      showToast('Gallery photograph uploaded!');
+    } catch {
+      handleUpdatePortfolioGalleryItem(id, { isUploading: false });
+      showToast('Failed to upload gallery photograph', 'error');
+    }
+  };
+
+  const handleMultiGalleryFilesSelected = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    e.target.value = '';
+    showToast(`Uploading ${files.length} gallery photograph${files.length > 1 ? 's' : ''}...`);
+
+    for (const file of files) {
+      const tempId = `gal-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      setPortfolioGallery((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          image: '',
+          alt: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+          isUploading: true
+        }
+      ]);
+
+      try {
+        let url = '';
+        try {
+          url = await uploadImageToStorage('portfolio', file);
+        } catch {
+          url = await fileToBase64(file);
+        }
+        setPortfolioGallery((prev) =>
+          prev.map((g) => (g.id === tempId ? { ...g, image: url, isUploading: false } : g))
+        );
+      } catch {
+        setPortfolioGallery((prev) =>
+          prev.map((g) => (g.id === tempId ? { ...g, isUploading: false } : g))
+        );
+      }
+    }
+    showToast('Gallery photographs ready!');
+  };
+
   const handleEditPortfolio = (item) => {
     setEditingPortfolioId(item.id);
+
+    // Normalize specs
+    let specs = [];
+    let note = item.specificationsNote || item.specifications_note || '';
+    const rawSpecs = item.specifications;
+    if (Array.isArray(rawSpecs) && rawSpecs.length > 0) {
+      specs = rawSpecs.map((s, idx) => ({
+        id: s.id || `spec-${idx}`,
+        label: s.label || '',
+        value: s.value || ''
+      }));
+    } else if (rawSpecs && typeof rawSpecs === 'object' && Array.isArray(rawSpecs.items)) {
+      specs = rawSpecs.items.map((s, idx) => ({
+        id: s.id || `spec-${idx}`,
+        label: s.label || '',
+        value: s.value || ''
+      }));
+      if (!note && rawSpecs.note) note = rawSpecs.note;
+    } else {
+      specs = [
+        { id: 'spec-1', label: 'AREA', value: '' },
+        { id: 'spec-2', label: 'LOCATION', value: '' },
+        { id: 'spec-3', label: 'TYPOLOGY', value: '' },
+        { id: 'spec-4', label: 'YEAR', value: '' },
+        { id: 'spec-5', label: 'SCOPE', value: '' },
+        { id: 'spec-6', label: 'PALETTE', value: '' }
+      ];
+    }
+    setPortfolioSpecs(specs);
+
+    // Normalize gallery
+    const rawGallery = item.galleryImages || item.gallery_images || [];
+    const galleryItems = Array.isArray(rawGallery)
+      ? rawGallery
+          .map((g, idx) => ({
+            id: g.id || `gal-${Date.now()}-${idx}`,
+            image: typeof g === 'string' ? g : (g.image || g.image_url || g.url || ''),
+            alt: typeof g === 'string' ? '' : (g.alt || g.caption || ''),
+            isUploading: false
+          }))
+          .filter((g) => Boolean(g.image))
+      : [];
+    setPortfolioGallery(galleryItems);
+
     setNewPortfolio({
-      title: item.title,
+      title: item.title || '',
       subtitle: item.subtitle || '',
       category: item.category || 'Residential',
       display_order: item.displayOrder ?? 0,
-      is_published: item.isPublished ?? true
+      is_published: item.isPublished ?? true,
+      the_idea_title: item.theIdeaTitle || item.the_idea_title || '',
+      the_idea_description: item.theIdeaDescription || item.the_idea_description || '',
+      specifications_note: note || 'Illustrative project narrative and sample specifications. Not verified client details.'
     });
-    setPortfolioPreviewUrl(item.image);
+    setPortfolioPreviewUrl(item.image || item.image_url || '');
     setPortfolioFile(null);
     setShowAddPortfolio(true);
     setTimeout(() => {
@@ -302,8 +465,20 @@ export default function AdminPage({ onNavigate }) {
       subtitle: '',
       category: 'Residential',
       display_order: portfolioList.length + 1,
-      is_published: true
+      is_published: true,
+      the_idea_title: '',
+      the_idea_description: '',
+      specifications_note: 'Illustrative project narrative and sample specifications. Not verified client details.'
     });
+    setPortfolioSpecs([
+      { id: `spec-${Date.now()}-1`, label: 'AREA', value: '' },
+      { id: `spec-${Date.now()}-2`, label: 'LOCATION', value: '' },
+      { id: `spec-${Date.now()}-3`, label: 'TYPOLOGY', value: '' },
+      { id: `spec-${Date.now()}-4`, label: 'YEAR', value: '' },
+      { id: `spec-${Date.now()}-5`, label: 'SCOPE', value: '' },
+      { id: `spec-${Date.now()}-6`, label: 'PALETTE', value: '' }
+    ]);
+    setPortfolioGallery([]);
     setPortfolioFile(null);
     setPortfolioPreviewUrl('');
     setShowAddPortfolio(false);
@@ -316,7 +491,7 @@ export default function AdminPage({ onNavigate }) {
       return;
     }
     if (!portfolioFile && !portfolioPreviewUrl) {
-      showToast('Please select a project image to upload', 'error');
+      showToast('Please select a project photograph to upload', 'error');
       return;
     }
 
@@ -331,18 +506,42 @@ export default function AdminPage({ onNavigate }) {
         }
       }
 
+      // Filter valid specifications
+      const cleanedSpecs = portfolioSpecs
+        .filter((s) => s.label.trim() || s.value.trim())
+        .map((s) => ({ label: s.label.trim().toUpperCase(), value: s.value.trim() }));
+
+      // Clean gallery images
+      const cleanedGallery = portfolioGallery
+        .filter((g) => Boolean(g.image))
+        .map((g) => ({
+          id: g.id,
+          image: g.image,
+          alt: g.alt?.trim() || newPortfolio.title.trim()
+        }));
+
+      const portfolioPayload = {
+        title: newPortfolio.title.trim(),
+        subtitle: newPortfolio.subtitle?.trim() || '',
+        category: newPortfolio.category,
+        display_order: parseInt(newPortfolio.display_order) || 0,
+        is_published: Boolean(newPortfolio.is_published),
+        image_url: imageUrl,
+        the_idea_title: newPortfolio.the_idea_title?.trim() || '',
+        the_idea_description: newPortfolio.the_idea_description?.trim() || '',
+        specifications: {
+          items: cleanedSpecs,
+          note: newPortfolio.specifications_note?.trim() || ''
+        },
+        gallery_images: cleanedGallery
+      };
+
       if (editingPortfolioId) {
-        const { error } = await updatePortfolioProject(editingPortfolioId, {
-          ...newPortfolio,
-          image_url: imageUrl
-        });
+        const { error } = await updatePortfolioProject(editingPortfolioId, portfolioPayload);
         if (error) throw error;
         showToast('Portfolio project updated successfully!');
       } else {
-        const { error, isLocal } = await createPortfolioProject({
-          ...newPortfolio,
-          image_url: imageUrl
-        });
+        const { error, isLocal } = await createPortfolioProject(portfolioPayload);
 
         if (isLocal) {
           showToast('Project uploaded and displayed in portfolio!', 'success');
@@ -1196,6 +1395,7 @@ export default function AdminPage({ onNavigate }) {
                             <option value="Commercial">Commercial</option>
                             <option value="Construction">Construction</option>
                             <option value="Modular Kitchen">Modular Kitchen</option>
+                            <option value="Turnkey">Turnkey</option>
                           </select>
                         </div>
 
@@ -1231,38 +1431,304 @@ export default function AdminPage({ onNavigate }) {
                         />
                       </div>
 
-                      <div className="admin-form-actions">
-                        <button
-                          type="button"
-                          onClick={handleCancelPortfolio}
-                          className="admin-cancel-btn"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          className="admin-submit-btn"
-                          disabled={portfolioSubmitting}
-                        >
-                          {portfolioSubmitting ? (
-                            <>
-                              <RefreshCw size={16} className="spin-animate" />
-                              <span>Saving...</span>
-                            </>
-                          ) : editingPortfolioId ? (
-                            <>
-                              <CheckCircle2 size={16} />
-                              <span>Save Changes</span>
-                            </>
-                          ) : (
-                            <>
-                              <UploadCloud size={16} />
-                              <span>Upload Project</span>
-                            </>
-                          )}
-                        </button>
+                      <div className="admin-publish-row">
+                        <label className="admin-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={newPortfolio.is_published}
+                            onChange={(e) =>
+                              setNewPortfolio({
+                                ...newPortfolio,
+                                is_published: e.target.checked
+                              })
+                            }
+                          />
+                          <span>Published (Visible on live portfolio)</span>
+                        </label>
                       </div>
                     </div>
+                  </div>
+
+                  {/* SUBSECTIONS: The Idea, Specifications, Gallery */}
+                  <div className="admin-portfolio-subsections">
+                    {/* 1. The Idea */}
+                    <div className="admin-sub-card">
+                      <div className="admin-sub-card-header">
+                        <div className="admin-section-subtitle-wrap">
+                          <h3 className="admin-sub-card-title">
+                            <Layers size={18} />
+                            The Idea — Vision & Story
+                          </h3>
+                          <span className="admin-sub-card-hint">
+                            This headline and narrative story are displayed in the primary overview section of the project page under &quot;THE IDEA&quot;.
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="admin-field-row">
+                        <label className="admin-field-label">Idea Headline / Heading</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Soft light. Earthy tones. A quiet place to unwind."
+                          value={newPortfolio.the_idea_title}
+                          onChange={(e) =>
+                            setNewPortfolio({
+                              ...newPortfolio,
+                              the_idea_title: e.target.value
+                            })
+                          }
+                          className="admin-input-text"
+                        />
+                      </div>
+
+                      <div className="admin-field-row">
+                        <label className="admin-field-label">Idea Narrative / Story Paragraphs</label>
+                        <textarea
+                          rows={4}
+                          placeholder="e.g. A restful bedroom at The Crest Residence pairs an olive-green upholstered bed with botanical wallpaper and warm wood detailing. Sheer curtains soften the daylight, while layered bedding adds texture and a sense of ease.&#10;&#10;White bedside tables, sculptural lighting and a curved lounge chair complete the space, balancing everyday comfort with understated elegance."
+                          value={newPortfolio.the_idea_description}
+                          onChange={(e) =>
+                            setNewPortfolio({
+                              ...newPortfolio,
+                              the_idea_description: e.target.value
+                            })
+                          }
+                          className="admin-textarea"
+                        />
+                        <span className="admin-field-hint" style={{ marginTop: '4px' }}>
+                          Separate paragraphs with a blank line. Each paragraph will be formatted with luxury spacing on the project details page.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 2. Project at a Glance / Specifications */}
+                    <div className="admin-sub-card">
+                      <div className="admin-sub-card-header">
+                        <div className="admin-section-subtitle-wrap">
+                          <h3 className="admin-sub-card-title">
+                            <Sliders size={18} />
+                            Project at a Glance — Specifications
+                            <span className="admin-items-count-badge">
+                              {portfolioSpecs.length} {portfolioSpecs.length === 1 ? 'item' : 'items'}
+                            </span>
+                          </h3>
+                          <span className="admin-sub-card-hint">
+                            Architectural facts displayed in the project overview grid (e.g. AREA, LOCATION, TYPOLOGY, YEAR, SCOPE, PALETTE). Enter values or add custom rows.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddPortfolioSpec}
+                          className="admin-add-item-btn"
+                        >
+                          <Plus size={16} />
+                          <span>Add Specification</span>
+                        </button>
+                      </div>
+
+                      <div className="admin-specs-grid-editor">
+                        {portfolioSpecs.map((spec) => (
+                          <div key={spec.id} className="admin-spec-item-row">
+                            <input
+                              type="text"
+                              placeholder="LABEL"
+                              value={spec.label}
+                              onChange={(e) =>
+                                handleUpdatePortfolioSpec(spec.id, { label: e.target.value.toUpperCase() })
+                              }
+                              className="admin-spec-label-input"
+                              title="Specification label (e.g. AREA, LOCATION)"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Value (e.g. 2,400 sq ft)"
+                              value={spec.value}
+                              onChange={(e) =>
+                                handleUpdatePortfolioSpec(spec.id, { value: e.target.value })
+                              }
+                              className="admin-spec-value-input"
+                              title="Specification value"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePortfolioSpec(spec.id)}
+                              className="admin-spec-remove-btn"
+                              title="Remove specification"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="admin-field-row" style={{ marginTop: '0.5rem' }}>
+                        <label className="admin-field-label">Specifications Footnote / Note</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Illustrative project narrative and sample specifications. Not verified client details."
+                          value={newPortfolio.specifications_note}
+                          onChange={(e) =>
+                            setNewPortfolio({
+                              ...newPortfolio,
+                              specifications_note: e.target.value
+                            })
+                          }
+                          className="admin-input-text"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 3. Project Gallery Photographs */}
+                    <div className="admin-sub-card">
+                      <div className="admin-sub-card-header">
+                        <div className="admin-section-subtitle-wrap">
+                          <h3 className="admin-sub-card-title">
+                            <ImageIcon size={18} />
+                            Inside the Residence — Gallery Photographs
+                            <span className="admin-items-count-badge">
+                              {portfolioGallery.length} {portfolioGallery.length === 1 ? 'photo' : 'photos'}
+                            </span>
+                          </h3>
+                          <span className="admin-sub-card-hint">
+                            Upload project photography. Photos are automatically formatted into architectural pairs and panoramic centerpieces on the project details page.
+                          </span>
+                        </div>
+                        <div className="admin-gallery-controls-bar">
+                          <input
+                            type="file"
+                            ref={portfolioGalleryInputRef}
+                            onChange={handleMultiGalleryFilesSelected}
+                            accept="image/*"
+                            multiple
+                            style={{ display: 'none' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => portfolioGalleryInputRef.current?.click()}
+                            className="admin-gallery-upload-btn"
+                          >
+                            <UploadCloud size={16} />
+                            <span>Upload Photos (Multi-select)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleAddPortfolioGalleryItem}
+                            className="admin-add-item-btn"
+                          >
+                            <Plus size={16} />
+                            <span>Add Photo Card</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {portfolioGallery.length === 0 ? (
+                        <div className="admin-empty-items-box">
+                          <ImageIcon size={28} className="admin-empty-icon" />
+                          <p>No gallery photographs added yet.</p>
+                          <span>
+                            Click &quot;Upload Photos&quot; above to select multiple images, or &quot;Add Photo Card&quot; to attach images individually.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="admin-gallery-grid-list">
+                          {portfolioGallery.map((item, idx) => (
+                            <div key={item.id} className="admin-gallery-card-item">
+                              <div className="admin-gallery-thumb-container">
+                                {item.image ? (
+                                  <>
+                                    <img src={item.image} alt={item.alt || `Photo #${idx + 1}`} />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemovePortfolioGalleryItem(item.id)}
+                                      className="admin-gallery-remove-btn"
+                                      title="Remove photograph"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <label
+                                    className="admin-item-upload-box"
+                                    style={{
+                                      width: '100%',
+                                      height: '100%',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}
+                                  >
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handlePortfolioGalleryFileChange(item.id, file);
+                                      }}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <UploadCloud size={20} className="admin-icon-muted" />
+                                    <span style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px' }}>
+                                      Choose photo
+                                    </span>
+                                  </label>
+                                )}
+                                {item.isUploading && (
+                                  <div className="admin-gallery-uploading-overlay">
+                                    <RefreshCw size={14} className="spin-animate" />
+                                    <span>Uploading...</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="admin-gallery-caption-box">
+                                <input
+                                  type="text"
+                                  placeholder={`Photo #${idx + 1} caption / alt`}
+                                  value={item.alt}
+                                  onChange={(e) =>
+                                    handleUpdatePortfolioGalleryItem(item.id, { alt: e.target.value })
+                                  }
+                                  className="admin-gallery-caption-input"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="admin-form-actions">
+                    <button
+                      type="button"
+                      onClick={handleCancelPortfolio}
+                      className="admin-cancel-btn"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="admin-submit-btn"
+                      disabled={portfolioSubmitting}
+                    >
+                      {portfolioSubmitting ? (
+                        <>
+                          <RefreshCw size={16} className="spin-animate" />
+                          <span>Saving Project...</span>
+                        </>
+                      ) : editingPortfolioId ? (
+                        <>
+                          <CheckCircle2 size={16} />
+                          <span>Save Changes</span>
+                        </>
+                      ) : (
+                        <>
+                          <UploadCloud size={16} />
+                          <span>Upload Project</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </form>
               </div>
@@ -1271,7 +1737,7 @@ export default function AdminPage({ onNavigate }) {
             {/* Filter & Search Bar */}
             <div className="admin-filter-bar">
               <div className="admin-category-pills">
-                {['All', 'Residential', 'Commercial', 'Construction', 'Modular Kitchen'].map(
+                {['All', 'Residential', 'Commercial', 'Construction', 'Modular Kitchen', 'Turnkey'].map(
                   (cat) => (
                     <button
                       key={cat}

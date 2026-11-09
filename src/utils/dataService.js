@@ -168,6 +168,49 @@ export async function getPortfolioProjects() {
 }
 
 function normalizePortfolioItem(item) {
+  // Normalize specifications
+  let rawSpecs = item.specifications;
+  if (typeof rawSpecs === 'string') {
+    try {
+      rawSpecs = JSON.parse(rawSpecs);
+    } catch {
+      rawSpecs = [];
+    }
+  }
+  let specsList = [];
+  let specNote = item.specifications_note || item.specificationsNote || '';
+  if (Array.isArray(rawSpecs)) {
+    specsList = rawSpecs;
+  } else if (rawSpecs && typeof rawSpecs === 'object') {
+    specsList = Array.isArray(rawSpecs.items) ? rawSpecs.items : [];
+    if (!specNote && rawSpecs.note) {
+      specNote = rawSpecs.note;
+    }
+  }
+
+  // Normalize gallery images
+  let rawGallery = item.gallery_images || item.galleryImages || [];
+  if (typeof rawGallery === 'string') {
+    try {
+      rawGallery = JSON.parse(rawGallery);
+    } catch {
+      rawGallery = [];
+    }
+  }
+  if (!Array.isArray(rawGallery)) rawGallery = [];
+  const normalizedGallery = rawGallery
+    .map((g, idx) => {
+      if (typeof g === 'string') {
+        return { id: `gal-${idx}`, image: g, alt: item.title || 'Gallery image' };
+      }
+      return {
+        id: g.id || `gal-${idx}`,
+        image: g.image || g.image_url || g.url || '',
+        alt: g.alt || g.caption || item.title || 'Gallery image'
+      };
+    })
+    .filter((g) => Boolean(g.image));
+
   return {
     id: item.id || `proj-${Math.random()}`,
     title: item.title || 'Untitled Project',
@@ -180,8 +223,9 @@ function normalizePortfolioItem(item) {
     isPublished: item.is_published ?? item.isPublished ?? true,
     theIdeaTitle: item.the_idea_title || item.theIdeaTitle || '',
     theIdeaDescription: item.the_idea_description || item.theIdeaDescription || '',
-    specifications: item.specifications || [],
-    galleryImages: item.gallery_images || item.galleryImages || []
+    specifications: specsList,
+    specificationsNote: specNote,
+    galleryImages: normalizedGallery
   };
 }
 
@@ -194,10 +238,10 @@ export async function createPortfolioProject(projectData) {
     aspect_ratio: projectData.aspect_ratio || 0.667,
     display_order: projectData.display_order || 0,
     is_published: projectData.is_published ?? true,
-    the_idea_title: projectData.the_idea_title || '',
-    the_idea_description: projectData.the_idea_description || '',
+    the_idea_title: projectData.the_idea_title || projectData.theIdeaTitle || '',
+    the_idea_description: projectData.the_idea_description || projectData.theIdeaDescription || '',
     specifications: projectData.specifications || [],
-    gallery_images: projectData.gallery_images || []
+    gallery_images: projectData.gallery_images || projectData.galleryImages || []
   };
 
   try {
@@ -252,6 +296,13 @@ export async function updatePortfolioProject(id, updates) {
       else if (updates.displayOrder !== undefined) payload.display_order = updates.displayOrder;
       if (updates.is_published !== undefined) payload.is_published = updates.is_published;
       else if (updates.isPublished !== undefined) payload.is_published = updates.isPublished;
+      if (updates.the_idea_title !== undefined) payload.the_idea_title = updates.the_idea_title;
+      else if (updates.theIdeaTitle !== undefined) payload.the_idea_title = updates.theIdeaTitle;
+      if (updates.the_idea_description !== undefined) payload.the_idea_description = updates.the_idea_description;
+      else if (updates.theIdeaDescription !== undefined) payload.the_idea_description = updates.theIdeaDescription;
+      if (updates.specifications !== undefined) payload.specifications = updates.specifications;
+      if (updates.gallery_images !== undefined) payload.gallery_images = updates.gallery_images;
+      else if (updates.galleryImages !== undefined) payload.gallery_images = updates.galleryImages;
 
       const { data, error } = await supabase
         .from('portfolio_projects')

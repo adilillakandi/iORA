@@ -1466,4 +1466,220 @@
   }
 }
 
+/* ==========================================================================
+   ADMIN PORTFOLIO DETAIL BUILDER (THE IDEA, SPECS, GALLERY)
+   ========================================================================== */
+.admin-portfolio-subsections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-sub-card {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.admin-sub-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-sub-card-title {
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: #f0f0f3;
+  margin: 0 0 0.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-sub-card-hint {
+  font-size: 0.8rem;
+  color: #8c8c96;
+  line-height: 1.4;
+}
+
+/* Specifications Builder */
+.admin-specs-grid-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.85rem;
+}
+
+.admin-spec-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+}
+
+.admin-spec-label-input {
+  width: 105px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #d4b992;
+  letter-spacing: 0.04em;
+}
+
+.admin-spec-value-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.84rem;
+  color: #e2e2e8;
+}
+
+.admin-spec-remove-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.admin-spec-remove-btn:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
+}
+
+/* Gallery Builder */
+.admin-gallery-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.admin-gallery-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(212, 185, 146, 0.15);
+  color: #d4b992;
+  border: 1px solid rgba(212, 185, 146, 0.35);
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.admin-gallery-upload-btn:hover {
+  background: rgba(212, 185, 146, 0.25);
+  color: #ffffff;
+}
+
+.admin-gallery-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1rem;
+}
+
+.admin-gallery-card-item {
+  position: relative;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-gallery-thumb-container {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  background: #141418;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-gallery-thumb-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-gallery-uploading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  color: #d4b992;
+  font-size: 0.78rem;
+}
+
+.admin-gallery-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ff6b6b;
+  border: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.admin-gallery-remove-btn:hover {
+  background: #ff4d4f;
+  color: #fff;
+}
+
+.admin-gallery-caption-box {
+  padding: 0.6rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-gallery-caption-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+  color: #d6d6dc;
+}
+
 
