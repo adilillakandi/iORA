@@ -1,13 +1,14 @@
 import { supabase } from './supabase';
 import { portfolioData } from '../data/portfolioData';
 import { shopData } from '../data/shopData';
+import { homeData } from '../data/homeData';
 
 const LOCAL_PORTFOLIO_KEY = 'iora_admin_local_portfolio';
 const LOCAL_SHOP_KEY = 'iora_admin_local_shop';
-const LOCAL_PORTFOLIO_DELETED_KEY = 'iora_admin_deleted_portfolio';
-const LOCAL_SHOP_DELETED_KEY = 'iora_admin_deleted_shop';
 const LOCAL_PORTFOLIO_OVERRIDES_KEY = 'iora_admin_overrides_portfolio';
 const LOCAL_SHOP_OVERRIDES_KEY = 'iora_admin_overrides_shop';
+const LOCAL_NARRATIVE_SLIDES_KEY = 'iora_admin_local_narrative_slides';
+const LOCAL_WHAT_WE_DO_KEY = 'iora_admin_local_what_we_do';
 
 // Valid UUID format checker (prevents PostgreSQL "invalid input syntax for type uuid" error)
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -126,17 +127,14 @@ export function fileToBase64(file) {
 // PORTFOLIO PROJECTS
 // ============================================================================
 export async function getPortfolioProjects() {
-  const deleted = new Set(getLocalItems(LOCAL_PORTFOLIO_DELETED_KEY));
-  const overrides = getLocalObject(LOCAL_PORTFOLIO_OVERRIDES_KEY);
   const localItems = getLocalItems(LOCAL_PORTFOLIO_KEY);
+  const overrides = getLocalObject(LOCAL_PORTFOLIO_OVERRIDES_KEY);
 
-  const applyOverridesAndFilter = (list) => {
-    return list
-      .filter((item) => !deleted.has(item.id))
-      .map((item) => {
-        const itemOverride = overrides[item.id];
-        return normalizePortfolioItem(itemOverride ? { ...item, ...itemOverride } : item);
-      });
+  const applyOverrides = (list) => {
+    return list.map((item) => {
+      const itemOverride = overrides[item.id];
+      return normalizePortfolioItem(itemOverride ? { ...item, ...itemOverride } : item);
+    });
   };
 
   try {
@@ -146,23 +144,26 @@ export async function getPortfolioProjects() {
       .order('display_order', { ascending: true })
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      // Merge with any local preview items not yet in DB
-      const combined = [...data, ...localItems.filter((l) => !data.some((d) => d.id === l.id))];
-      return applyOverridesAndFilter(combined);
+    if (!error && Array.isArray(data)) {
+      // Merge with any un-synced local preview items
+      const unSyncedLocal = localItems.filter((l) => !data.some((d) => d.id === l.id));
+      const combined = [...data, ...unSyncedLocal];
+      return applyOverrides(combined);
     }
 
-    // If Supabase table is empty, return local preview items + default static items
+    if (error) {
+      console.warn('Supabase portfolio query notice:', error.message);
+    }
+
+    // If Supabase table is unreachable/offline, return local preview items
     if (localItems.length > 0) {
-      const combined = [...localItems, ...portfolioData.projects.filter((p) => !localItems.some((l) => l.id === p.id))];
-      return applyOverridesAndFilter(combined);
+      return applyOverrides(localItems);
     }
 
-    return applyOverridesAndFilter(portfolioData.projects);
+    return [];
   } catch (err) {
-    console.warn('Failed to load portfolio from Supabase, using defaults:', err);
-    const combined = [...localItems, ...portfolioData.projects.filter((p) => !localItems.some((l) => l.id === p.id))];
-    return applyOverridesAndFilter(combined);
+    console.warn('Failed to load portfolio from Supabase:', err);
+    return applyOverrides(localItems);
   }
 }
 
@@ -270,19 +271,56 @@ export async function updatePortfolioProject(id, updates) {
   }
 }
 
+export async function syncLocalPortfoliosToSupabase() {
+  const local = getLocalItems(LOCAL_PORTFOLIO_KEY);
+  if (!local || local.length === 0) return { synced: 0, remainingCount: 0 };
+
+  const remaining = [];
+  let synced = 0;
+
+  for (const item of local) {
+    try {
+      const payload = {
+        title: item.title,
+        subtitle: item.subtitle || '',
+        category: item.category || 'Residential',
+        image_url: item.image_url || item.image,
+        aspect_ratio: item.aspect_ratio || item.aspectRatio || 0.667,
+        display_order: item.display_order ?? item.displayOrder ?? 0,
+        is_published: item.is_published ?? item.isPublished ?? true,
+        the_idea_title: item.the_idea_title || item.theIdeaTitle || '',
+        the_idea_description: item.the_idea_description || item.theIdeaDescription || '',
+        specifications: item.specifications || [],
+        gallery_images: item.gallery_images || item.galleryImages || []
+      };
+
+      const { data, error } = await supabase
+        .from('portfolio_projects')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (!error && data) {
+        synced++;
+      } else {
+        remaining.push(item);
+      }
+    } catch {
+      remaining.push(item);
+    }
+  }
+
+  setLocalItems(LOCAL_PORTFOLIO_KEY, remaining);
+  return { synced, remainingCount: remaining.length };
+}
+
 export async function deletePortfolioProject(id) {
   try {
-    // 1. Mark as deleted locally so static and local items never reappear
-    const deleted = getLocalItems(LOCAL_PORTFOLIO_DELETED_KEY);
-    if (!deleted.includes(id)) {
-      setLocalItems(LOCAL_PORTFOLIO_DELETED_KEY, [...deleted, id]);
-    }
-
-    // 2. Remove from local items
+    // 1. Remove from local items if present
     const local = getLocalItems(LOCAL_PORTFOLIO_KEY);
     setLocalItems(LOCAL_PORTFOLIO_KEY, local.filter((i) => i.id !== id));
 
-    // 3. Remove overrides
+    // 2. Remove overrides
     const overrides = getLocalObject(LOCAL_PORTFOLIO_OVERRIDES_KEY);
     if (overrides[id]) {
       const newOverrides = { ...overrides };
@@ -290,20 +328,23 @@ export async function deletePortfolioProject(id) {
       setLocalItems(LOCAL_PORTFOLIO_OVERRIDES_KEY, newOverrides);
     }
 
-    // 4. If valid UUID, delete from Supabase
-    if (isUuid(id)) {
+    // 3. Delete from Supabase
+    if (isUuid(id) || !String(id).startsWith('local-')) {
       const { error } = await supabase
         .from('portfolio_projects')
         .delete()
         .eq('id', id);
 
-      if (error) console.warn('Supabase portfolio delete warning:', error);
+      if (error) {
+        console.warn('Supabase portfolio delete warning:', error);
+        return { error };
+      }
     }
 
     return { error: null };
   } catch (err) {
     console.error('Delete portfolio project error:', err);
-    return { error: null };
+    return { error: err };
   }
 }
 
@@ -336,17 +377,14 @@ export async function togglePortfolioPublished(id, currentStatus) {
 // SHOP PRODUCTS
 // ============================================================================
 export async function getShopProducts() {
-  const deleted = new Set(getLocalItems(LOCAL_SHOP_DELETED_KEY));
-  const overrides = getLocalObject(LOCAL_SHOP_OVERRIDES_KEY);
   const localItems = getLocalItems(LOCAL_SHOP_KEY);
+  const overrides = getLocalObject(LOCAL_SHOP_OVERRIDES_KEY);
 
-  const applyOverridesAndFilter = (list) => {
-    return list
-      .filter((item) => !deleted.has(item.id))
-      .map((item) => {
-        const itemOverride = overrides[item.id];
-        return normalizeShopProduct(itemOverride ? { ...item, ...itemOverride } : item);
-      });
+  const applyOverrides = (list) => {
+    return list.map((item) => {
+      const itemOverride = overrides[item.id];
+      return normalizeShopProduct(itemOverride ? { ...item, ...itemOverride } : item);
+    });
   };
 
   try {
@@ -356,21 +394,24 @@ export async function getShopProducts() {
       .order('display_order', { ascending: true })
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      const combined = [...data, ...localItems.filter((l) => !data.some((d) => d.id === l.id))];
-      return applyOverridesAndFilter(combined);
+    if (!error && Array.isArray(data)) {
+      const unSyncedLocal = localItems.filter((l) => !data.some((d) => d.id === l.id));
+      const combined = [...data, ...unSyncedLocal];
+      return applyOverrides(combined);
+    }
+
+    if (error) {
+      console.warn('Supabase shop query notice:', error.message);
     }
 
     if (localItems.length > 0) {
-      const combined = [...localItems, ...shopData.products.filter((p) => !localItems.some((l) => l.id === p.id))];
-      return applyOverridesAndFilter(combined);
+      return applyOverrides(localItems);
     }
 
-    return applyOverridesAndFilter(shopData.products);
+    return [];
   } catch (err) {
-    console.warn('Failed to load shop products from Supabase, using defaults:', err);
-    const combined = [...localItems, ...shopData.products.filter((p) => !localItems.some((l) => l.id === p.id))];
-    return applyOverridesAndFilter(combined);
+    console.warn('Failed to load shop products from Supabase:', err);
+    return applyOverrides(localItems);
   }
 }
 
@@ -544,19 +585,58 @@ export async function updateShopProduct(id, updates) {
   }
 }
 
+export async function syncLocalShopToSupabase() {
+  const local = getLocalItems(LOCAL_SHOP_KEY);
+  if (!local || local.length === 0) return { synced: 0, remainingCount: 0 };
+
+  const remaining = [];
+  let synced = 0;
+
+  for (const item of local) {
+    try {
+      const payload = {
+        name: item.name,
+        category: item.category || 'Bedroom',
+        tag: item.tag || '',
+        price: item.price || '',
+        image_url: item.image_url || item.image,
+        description: item.description || '',
+        dimensions: item.dimensions || '',
+        material: item.material || '',
+        finishes: item.finishes || [],
+        configurations: item.configurations || item.individual_items || [],
+        individual_items: item.individual_items || item.configurations || [],
+        display_order: item.display_order ?? item.displayOrder ?? 0,
+        is_published: item.is_published ?? item.isPublished ?? true
+      };
+
+      const { data, error } = await supabase
+        .from('shop_products')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (!error && data) {
+        synced++;
+      } else {
+        remaining.push(item);
+      }
+    } catch {
+      remaining.push(item);
+    }
+  }
+
+  setLocalItems(LOCAL_SHOP_KEY, remaining);
+  return { synced, remainingCount: remaining.length };
+}
+
 export async function deleteShopProduct(id) {
   try {
-    // 1. Mark as deleted locally so static and local items never reappear
-    const deleted = getLocalItems(LOCAL_SHOP_DELETED_KEY);
-    if (!deleted.includes(id)) {
-      setLocalItems(LOCAL_SHOP_DELETED_KEY, [...deleted, id]);
-    }
-
-    // 2. Remove from local items
+    // 1. Remove from local items
     const local = getLocalItems(LOCAL_SHOP_KEY);
     setLocalItems(LOCAL_SHOP_KEY, local.filter((i) => i.id !== id));
 
-    // 3. Remove overrides
+    // 2. Remove overrides
     const overrides = getLocalObject(LOCAL_SHOP_OVERRIDES_KEY);
     if (overrides[id]) {
       const newOverrides = { ...overrides };
@@ -564,20 +644,23 @@ export async function deleteShopProduct(id) {
       setLocalItems(LOCAL_SHOP_OVERRIDES_KEY, newOverrides);
     }
 
-    // 4. If valid UUID, delete from Supabase
-    if (isUuid(id)) {
+    // 3. Delete from Supabase
+    if (isUuid(id) || !String(id).startsWith('local-')) {
       const { error } = await supabase
         .from('shop_products')
         .delete()
         .eq('id', id);
 
-      if (error) console.warn('Supabase shop delete warning:', error);
+      if (error) {
+        console.warn('Supabase shop delete warning:', error);
+        return { error };
+      }
     }
 
     return { error: null };
   } catch (err) {
     console.error('Delete shop product error:', err);
-    return { error: null };
+    return { error: err };
   }
 }
 
@@ -710,4 +793,402 @@ export async function getQuoteRequests() {
     console.warn('Failed to load quote requests from Supabase, returning local:', err);
     return getLocalItems(LOCAL_QUOTES_KEY);
   }
+}
+
+// ============================================================================
+// HOMEPAGE CAROUSEL / NARRATIVE SLIDES
+// ============================================================================
+export function normalizeNarrativeSlide(item) {
+  return {
+    id: item.id || `slide-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    title: item.title || 'Architectural Detail',
+    image: item.image_url || item.image || '/assets/images/0c8944d15b77.jpg',
+    image_url: item.image_url || item.image || '/assets/images/0c8944d15b77.jpg',
+    width: Number(item.width) || 425,
+    height: Number(item.height) || 350,
+    displayOrder: item.display_order ?? item.displayOrder ?? 0,
+    isPublished: item.is_published ?? item.isPublished ?? true
+  };
+}
+
+export async function getNarrativeSlides() {
+  const localItems = getLocalItems(LOCAL_NARRATIVE_SLIDES_KEY);
+
+  try {
+    const { data, error } = await supabase
+      .from('narrative_slides')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const unSyncedLocal = localItems.filter((l) => !data.some((d) => d.id === l.id));
+      const combined = [...data, ...unSyncedLocal];
+      return combined.map(normalizeNarrativeSlide);
+    }
+
+    if (localItems.length > 0) {
+      return localItems.map(normalizeNarrativeSlide);
+    }
+
+    return (homeData.narrative.slides || []).map(normalizeNarrativeSlide);
+  } catch (err) {
+    console.warn('Failed to load narrative slides from Supabase:', err);
+    if (localItems.length > 0) {
+      return localItems.map(normalizeNarrativeSlide);
+    }
+    return (homeData.narrative.slides || []).map(normalizeNarrativeSlide);
+  }
+}
+
+export async function createNarrativeSlide(slideData) {
+  const payload = {
+    title: slideData.title || 'Architectural Detail',
+    image_url: slideData.image_url || slideData.image,
+    width: Number(slideData.width) || 425,
+    height: Number(slideData.height) || 350,
+    display_order: Number(slideData.display_order) || 0,
+    is_published: slideData.is_published ?? true
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from('narrative_slides')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data: normalizeNarrativeSlide(data), error: null, isLocal: false };
+  } catch (err) {
+    console.warn('Supabase insert failed, saving slide to local preview storage:', err);
+    const fallbackItem = {
+      ...payload,
+      id: `local-slide-${Date.now()}`,
+      created_at: new Date().toISOString()
+    };
+    const local = getLocalItems(LOCAL_NARRATIVE_SLIDES_KEY);
+    local.unshift(fallbackItem);
+    setLocalItems(LOCAL_NARRATIVE_SLIDES_KEY, local);
+    return { data: normalizeNarrativeSlide(fallbackItem), error: err, isLocal: true };
+  }
+}
+
+export async function updateNarrativeSlide(id, updates) {
+  try {
+    const local = getLocalItems(LOCAL_NARRATIVE_SLIDES_KEY);
+    const existingIndex = local.findIndex((i) => i.id === id);
+    if (existingIndex >= 0) {
+      local[existingIndex] = { ...local[existingIndex], ...updates };
+      setLocalItems(LOCAL_NARRATIVE_SLIDES_KEY, local);
+    }
+
+    if (isUuid(id) || !String(id).startsWith('local-')) {
+      const payload = {};
+      if (updates.title !== undefined) payload.title = updates.title;
+      if (updates.image_url !== undefined) payload.image_url = updates.image_url;
+      else if (updates.image !== undefined) payload.image_url = updates.image;
+      if (updates.width !== undefined) payload.width = Number(updates.width);
+      if (updates.height !== undefined) payload.height = Number(updates.height);
+      if (updates.display_order !== undefined) payload.display_order = Number(updates.display_order);
+      if (updates.is_published !== undefined) payload.is_published = updates.is_published;
+
+      const { data, error } = await supabase
+        .from('narrative_slides')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error) console.warn('Supabase narrative slide update warning:', error);
+      return { data: data ? normalizeNarrativeSlide(data) : updates, error: null };
+    }
+
+    return { data: updates, error: null };
+  } catch (err) {
+    console.error('Update narrative slide error:', err);
+    return { data: updates, error: null };
+  }
+}
+
+export async function deleteNarrativeSlide(id) {
+  try {
+    const local = getLocalItems(LOCAL_NARRATIVE_SLIDES_KEY);
+    setLocalItems(LOCAL_NARRATIVE_SLIDES_KEY, local.filter((i) => i.id !== id));
+
+    if (isUuid(id) || !String(id).startsWith('local-')) {
+      const { error } = await supabase
+        .from('narrative_slides')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.warn('Supabase slide delete warning:', error);
+        return { error };
+      }
+    }
+
+    return { error: null };
+  } catch (err) {
+    console.error('Delete narrative slide error:', err);
+    return { error: err };
+  }
+}
+
+export async function toggleNarrativeSlidePublished(id, currentStatus) {
+  try {
+    const newStatus = !currentStatus;
+    const local = getLocalItems(LOCAL_NARRATIVE_SLIDES_KEY);
+    setLocalItems(LOCAL_NARRATIVE_SLIDES_KEY, local.map((i) => i.id === id ? { ...i, is_published: newStatus, isPublished: newStatus } : i));
+
+    if (isUuid(id) || !String(id).startsWith('local-')) {
+      await supabase
+        .from('narrative_slides')
+        .update({ is_published: newStatus })
+        .eq('id', id);
+    }
+
+    return { error: null };
+  } catch (err) {
+    return { error: err };
+  }
+}
+
+export async function syncLocalNarrativeToSupabase() {
+  const local = getLocalItems(LOCAL_NARRATIVE_SLIDES_KEY);
+  if (!local || local.length === 0) return { synced: 0, remainingCount: 0 };
+
+  const remaining = [];
+  let synced = 0;
+
+  for (const item of local) {
+    try {
+      const payload = {
+        title: item.title || 'Architectural Detail',
+        image_url: item.image_url || item.image,
+        width: Number(item.width) || 425,
+        height: Number(item.height) || 350,
+        display_order: Number(item.display_order ?? item.displayOrder) || 0,
+        is_published: item.is_published ?? item.isPublished ?? true
+      };
+
+      const { data, error } = await supabase
+        .from('narrative_slides')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (!error && data) {
+        synced++;
+      } else {
+        remaining.push(item);
+      }
+    } catch {
+      remaining.push(item);
+    }
+  }
+
+  setLocalItems(LOCAL_NARRATIVE_SLIDES_KEY, remaining);
+  return { synced, remainingCount: remaining.length };
+}
+
+// ============================================================================
+// WHAT WE DO SERVICES
+// ============================================================================
+export function normalizeWhatWeDoService(item) {
+  return {
+    id: item.id || `service-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    name: item.name || 'Custom Service',
+    description: item.description || '',
+    image: item.image_url || item.image || '/assets/images/fa41ab620455.jpg',
+    image_url: item.image_url || item.image || '/assets/images/fa41ab620455.jpg',
+    width: Number(item.width) || 583,
+    height: Number(item.height) || 359,
+    displayOrder: item.display_order ?? item.displayOrder ?? 0,
+    isPublished: item.is_published ?? item.isPublished ?? true
+  };
+}
+
+export async function getWhatWeDoServices() {
+  const localItems = getLocalItems(LOCAL_WHAT_WE_DO_KEY);
+
+  try {
+    const { data, error } = await supabase
+      .from('what_we_do_services')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const unSyncedLocal = localItems.filter((l) => !data.some((d) => d.id === l.id));
+      const combined = [...data, ...unSyncedLocal];
+      return combined.map(normalizeWhatWeDoService);
+    }
+
+    if (localItems.length > 0) {
+      return localItems.map(normalizeWhatWeDoService);
+    }
+
+    return (homeData.whatWeDo.services || []).map(normalizeWhatWeDoService);
+  } catch (err) {
+    console.warn('Failed to load what we do services from Supabase:', err);
+    if (localItems.length > 0) {
+      return localItems.map(normalizeWhatWeDoService);
+    }
+    return (homeData.whatWeDo.services || []).map(normalizeWhatWeDoService);
+  }
+}
+
+export async function createWhatWeDoService(serviceData) {
+  const payload = {
+    name: serviceData.name || 'Untitled Service',
+    description: serviceData.description || '',
+    image_url: serviceData.image_url || serviceData.image,
+    width: Number(serviceData.width) || 583,
+    height: Number(serviceData.height) || 359,
+    display_order: Number(serviceData.display_order) || 0,
+    is_published: serviceData.is_published ?? true
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from('what_we_do_services')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data: normalizeWhatWeDoService(data), error: null, isLocal: false };
+  } catch (err) {
+    console.warn('Supabase insert failed, saving service to local storage:', err);
+    const fallbackItem = {
+      ...payload,
+      id: `local-service-${Date.now()}`,
+      created_at: new Date().toISOString()
+    };
+    const local = getLocalItems(LOCAL_WHAT_WE_DO_KEY);
+    local.unshift(fallbackItem);
+    setLocalItems(LOCAL_WHAT_WE_DO_KEY, local);
+    return { data: normalizeWhatWeDoService(fallbackItem), error: err, isLocal: true };
+  }
+}
+
+export async function updateWhatWeDoService(id, updates) {
+  try {
+    const local = getLocalItems(LOCAL_WHAT_WE_DO_KEY);
+    const existingIndex = local.findIndex((i) => i.id === id);
+    if (existingIndex >= 0) {
+      local[existingIndex] = { ...local[existingIndex], ...updates };
+      setLocalItems(LOCAL_WHAT_WE_DO_KEY, local);
+    }
+
+    if (isUuid(id) || !String(id).startsWith('local-')) {
+      const payload = {};
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.description !== undefined) payload.description = updates.description;
+      if (updates.image_url !== undefined) payload.image_url = updates.image_url;
+      else if (updates.image !== undefined) payload.image_url = updates.image;
+      if (updates.width !== undefined) payload.width = Number(updates.width);
+      if (updates.height !== undefined) payload.height = Number(updates.height);
+      if (updates.display_order !== undefined) payload.display_order = Number(updates.display_order);
+      if (updates.is_published !== undefined) payload.is_published = updates.is_published;
+
+      const { data, error } = await supabase
+        .from('what_we_do_services')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error) console.warn('Supabase what we do update warning:', error);
+      return { data: data ? normalizeWhatWeDoService(data) : updates, error: null };
+    }
+
+    return { data: updates, error: null };
+  } catch (err) {
+    console.error('Update what we do error:', err);
+    return { data: updates, error: null };
+  }
+}
+
+export async function deleteWhatWeDoService(id) {
+  try {
+    const local = getLocalItems(LOCAL_WHAT_WE_DO_KEY);
+    setLocalItems(LOCAL_WHAT_WE_DO_KEY, local.filter((i) => i.id !== id));
+
+    if (isUuid(id) || !String(id).startsWith('local-')) {
+      const { error } = await supabase
+        .from('what_we_do_services')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.warn('Supabase service delete warning:', error);
+        return { error };
+      }
+    }
+
+    return { error: null };
+  } catch (err) {
+    console.error('Delete what we do error:', err);
+    return { error: err };
+  }
+}
+
+export async function toggleWhatWeDoServicePublished(id, currentStatus) {
+  try {
+    const newStatus = !currentStatus;
+    const local = getLocalItems(LOCAL_WHAT_WE_DO_KEY);
+    setLocalItems(LOCAL_WHAT_WE_DO_KEY, local.map((i) => i.id === id ? { ...i, is_published: newStatus, isPublished: newStatus } : i));
+
+    if (isUuid(id) || !String(id).startsWith('local-')) {
+      await supabase
+        .from('what_we_do_services')
+        .update({ is_published: newStatus })
+        .eq('id', id);
+    }
+
+    return { error: null };
+  } catch (err) {
+    return { error: err };
+  }
+}
+
+export async function syncLocalWhatWeDoToSupabase() {
+  const local = getLocalItems(LOCAL_WHAT_WE_DO_KEY);
+  if (!local || local.length === 0) return { synced: 0, remainingCount: 0 };
+
+  const remaining = [];
+  let synced = 0;
+
+  for (const item of local) {
+    try {
+      const payload = {
+        name: item.name || 'Untitled Service',
+        description: item.description || '',
+        image_url: item.image_url || item.image,
+        width: Number(item.width) || 583,
+        height: Number(item.height) || 359,
+        display_order: Number(item.display_order ?? item.displayOrder) || 0,
+        is_published: item.is_published ?? item.isPublished ?? true
+      };
+
+      const { data, error } = await supabase
+        .from('what_we_do_services')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (!error && data) {
+        synced++;
+      } else {
+        remaining.push(item);
+      }
+    } catch {
+      remaining.push(item);
+    }
+  }
+
+  setLocalItems(LOCAL_WHAT_WE_DO_KEY, remaining);
+  return { synced, remainingCount: remaining.length };
 }

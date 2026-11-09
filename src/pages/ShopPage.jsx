@@ -4,17 +4,25 @@ import { getShopProducts } from '../utils/dataService';
 import CtaBanner from '../components/CtaBanner';
 
 export default function ShopPage({ onOpenConsultation, onNavigate }) {
-  const { header, categories, products: defaultProducts } = shopData;
-  const [products, setProducts] = useState(defaultProducts);
+  const { header, categories } = shopData;
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('All collections');
 
   useEffect(() => {
     let mounted = true;
-    getShopProducts().then((items) => {
-      if (mounted && items && items.length > 0) {
-        setProducts(items.filter((p) => p.isPublished !== false));
-      }
-    });
+    getShopProducts()
+      .then((items) => {
+        if (mounted) {
+          setProducts((items || []).filter((p) => p.isPublished !== false));
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load shop products:', err);
+        if (mounted) setLoading(false);
+      });
+
     return () => {
       mounted = false;
     };
@@ -75,47 +83,59 @@ export default function ShopPage({ onOpenConsultation, onNavigate }) {
 
           {/* Product Grid */}
           <div className="shop-products-grid">
-            {filteredProducts.map((product) => (
-              <article key={product.id} className="shop-product-card">
-                {/* Product Photograph */}
-                <div
-                  className="shop-product-image-frame"
-                  onClick={() => handleViewDetails(product)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`View details for ${product.name}`}
-                >
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    loading="lazy"
-                  />
-                  <div className="shop-product-image-overlay">
-                    <span className="shop-overlay-tag">{product.category}</span>
+            {loading ? (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 20px', color: '#888' }}>
+                <p style={{ letterSpacing: '0.04em', fontSize: '1rem' }}>Loading collection products...</p>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '80px 20px', color: '#888' }}>
+                <p style={{ fontSize: '1.1rem', marginBottom: '8px', color: '#aaa', letterSpacing: '0.02em' }}>
+                  No products available in this category.
+                </p>
+              </div>
+            ) : (
+              filteredProducts.map((product) => (
+                <article key={product.id} className="shop-product-card">
+                  {/* Product Photograph */}
+                  <div
+                    className="shop-product-image-frame"
+                    onClick={() => handleViewDetails(product)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View details for ${product.name}`}
+                  >
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      loading="lazy"
+                    />
+                    <div className="shop-product-image-overlay">
+                      <span className="shop-overlay-tag">{product.category}</span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Product Information */}
-                <div className="shop-product-info">
-                  <span className="shop-product-tag">{product.tag}</span>
-                  <h2 className="shop-product-name">{product.name}</h2>
+                  {/* Product Information */}
+                  <div className="shop-product-info">
+                    <span className="shop-product-tag">{product.tag}</span>
+                    <h2 className="shop-product-name">{product.name}</h2>
 
-                  {/* Price Row */}
-                  <div className="shop-price-finishes-row">
-                    <span className="shop-product-price">{product.price}</span>
-                    <button
-                      type="button"
-                      className="shop-price-view-btn"
-                      onClick={() => handleViewDetails(product)}
-                      id={`view-details-${product.id}`}
-                      aria-label={`View details for ${product.name}`}
-                    >
-                      View details ↗
-                    </button>
+                    {/* Price Row */}
+                    <div className="shop-price-finishes-row">
+                      <span className="shop-product-price">{product.price}</span>
+                      <button
+                        type="button"
+                        className="shop-price-view-btn"
+                        onClick={() => handleViewDetails(product)}
+                        id={`view-details-${product.id}`}
+                        aria-label={`View details for ${product.name}`}
+                      >
+                        View details ↗
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              ))
+            )}
           </div>
         </div>
       </section>

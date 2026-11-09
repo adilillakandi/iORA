@@ -1,11 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { homeData } from '../data/homeData';
+import { getWhatWeDoServices } from '../utils/dataService';
 
 export default function WhatWeDo() {
   const { whatWeDo } = homeData;
-  const [activeServiceId, setActiveServiceId] = useState(whatWeDo.services[0].id);
+  const [services, setServices] = useState(whatWeDo.services);
+  const [activeServiceId, setActiveServiceId] = useState(whatWeDo.services[0]?.id);
 
-  const activeService = whatWeDo.services.find((s) => s.id === activeServiceId) || whatWeDo.services[0];
+  useEffect(() => {
+    let mounted = true;
+    getWhatWeDoServices()
+      .then((items) => {
+        if (mounted && items && items.length > 0) {
+          const published = items.filter((s) => s.isPublished !== false);
+          if (published.length > 0) {
+            setServices(published);
+            setActiveServiceId((prev) => {
+              const exists = published.some((s) => s.id === prev);
+              return exists ? prev : published[0].id;
+            });
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load what we do services:', err);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const activeService = services.find((s) => s.id === activeServiceId) || services[0] || {};
 
   return (
     <section id="services" className="what-we-do-section" aria-label="What We Do">
@@ -27,7 +52,7 @@ export default function WhatWeDo() {
         <div className="what-we-do-content">
           {/* Service Selector Tabs */}
           <div className="services-tab-list">
-            {whatWeDo.services.map((service) => (
+            {services.map((service) => (
               <button
                 key={service.id}
                 className={`service-tab-item ${activeServiceId === service.id ? 'active' : ''}`}
@@ -43,10 +68,10 @@ export default function WhatWeDo() {
           {/* Showcase Area: Center Image + Top-Right Description */}
           <div className="service-showcase-group">
             <div className="service-preview-visual">
-              {whatWeDo.services.map((service) => (
+              {services.map((service) => (
                 <img
                   key={service.id}
-                  src={service.image}
+                  src={service.image || service.image_url}
                   alt={service.name}
                   width={service.width || 583}
                   height={service.height || 359}

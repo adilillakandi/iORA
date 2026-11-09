@@ -15,7 +15,9 @@ import {
   EyeOff,
   LogOut,
   UserCheck,
-  Package
+  Package,
+  Sliders,
+  Layers
 } from 'lucide-react';
 import {
   getPortfolioProjects,
@@ -23,11 +25,25 @@ import {
   updatePortfolioProject,
   deletePortfolioProject,
   togglePortfolioPublished,
+  syncLocalPortfoliosToSupabase,
   getShopProducts,
   createShopProduct,
   updateShopProduct,
   deleteShopProduct,
   toggleShopPublished,
+  syncLocalShopToSupabase,
+  getNarrativeSlides,
+  createNarrativeSlide,
+  updateNarrativeSlide,
+  deleteNarrativeSlide,
+  toggleNarrativeSlidePublished,
+  syncLocalNarrativeToSupabase,
+  getWhatWeDoServices,
+  createWhatWeDoService,
+  updateWhatWeDoService,
+  deleteWhatWeDoService,
+  toggleWhatWeDoServicePublished,
+  syncLocalWhatWeDoToSupabase,
   uploadImageToStorage,
   fileToBase64
 } from '../utils/dataService';
@@ -94,6 +110,47 @@ export default function AdminPage({ onNavigate }) {
   const [shopSubmitting, setShopSubmitting] = useState(false);
   const shopFileRef = useRef(null);
 
+  // Narrative / Homepage Carousel state
+  const [narrativeList, setNarrativeList] = useState([]);
+  const [narrativeLoading, setNarrativeLoading] = useState(true);
+  const [showAddNarrative, setShowAddNarrative] = useState(false);
+  const [narrativeSearch, setNarrativeSearch] = useState('');
+  const [editingNarrativeId, setEditingNarrativeId] = useState(null);
+  const narrativeFormRef = useRef(null);
+
+  const [newNarrative, setNewNarrative] = useState({
+    title: '',
+    width: 425,
+    height: 350,
+    display_order: 0,
+    is_published: true
+  });
+  const [narrativeFile, setNarrativeFile] = useState(null);
+  const [narrativePreviewUrl, setNarrativePreviewUrl] = useState('');
+  const [narrativeSubmitting, setNarrativeSubmitting] = useState(false);
+  const narrativeFileRef = useRef(null);
+
+  // What We Do section state
+  const [whatWeDoList, setWhatWeDoList] = useState([]);
+  const [whatWeDoLoading, setWhatWeDoLoading] = useState(true);
+  const [showAddWhatWeDo, setShowAddWhatWeDo] = useState(false);
+  const [whatWeDoSearch, setWhatWeDoSearch] = useState('');
+  const [editingWhatWeDoId, setEditingWhatWeDoId] = useState(null);
+  const whatWeDoFormRef = useRef(null);
+
+  const [newWhatWeDo, setNewWhatWeDo] = useState({
+    name: '',
+    description: '',
+    width: 583,
+    height: 359,
+    display_order: 0,
+    is_published: true
+  });
+  const [whatWeDoFile, setWhatWeDoFile] = useState(null);
+  const [whatWeDoPreviewUrl, setWhatWeDoPreviewUrl] = useState('');
+  const [whatWeDoSubmitting, setWhatWeDoSubmitting] = useState(false);
+  const whatWeDoFileRef = useRef(null);
+
   // Toast / notification
   const [toast, setToast] = useState(null);
   const showToast = (message, type = 'success') => {
@@ -113,6 +170,20 @@ export default function AdminPage({ onNavigate }) {
     const items = await getShopProducts();
     setShopList(items);
     setShopLoading(false);
+  };
+
+  const loadNarrative = async () => {
+    setNarrativeLoading(true);
+    const items = await getNarrativeSlides();
+    setNarrativeList(items);
+    setNarrativeLoading(false);
+  };
+
+  const loadWhatWeDo = async () => {
+    setWhatWeDoLoading(true);
+    const items = await getWhatWeDoServices();
+    setWhatWeDoList(items);
+    setWhatWeDoLoading(false);
   };
 
   // Auth verification check
@@ -142,22 +213,54 @@ export default function AdminPage({ onNavigate }) {
     showToast('Signed out of admin portal');
   };
 
-  // Initial data loading for both portfolio and shop
+  // Initial data loading for all sections
   useEffect(() => {
     let isMounted = true;
     if (authStatus.isAuthenticated) {
-      getPortfolioProjects().then((items) => {
-        if (isMounted) {
-          setPortfolioList(items);
-          setPortfolioLoading(false);
-        }
-      });
-      getShopProducts().then((items) => {
-        if (isMounted) {
-          setShopList(items);
-          setShopLoading(false);
-        }
-      });
+      // Auto-sync any previously stuck local items to database
+      syncLocalPortfoliosToSupabase()
+        .then((res) => {
+          if (res && res.synced > 0) {
+            showToast(`Synced ${res.synced} local portfolio project(s) to database!`);
+          }
+          if (isMounted) loadPortfolio();
+        })
+        .catch(() => {
+          if (isMounted) loadPortfolio();
+        });
+
+      syncLocalShopToSupabase()
+        .then((res) => {
+          if (res && res.synced > 0) {
+            showToast(`Synced ${res.synced} local shop product(s) to database!`);
+          }
+          if (isMounted) loadShop();
+        })
+        .catch(() => {
+          if (isMounted) loadShop();
+        });
+
+      syncLocalNarrativeToSupabase()
+        .then((res) => {
+          if (res && res.synced > 0) {
+            showToast(`Synced ${res.synced} carousel slide(s) to database!`);
+          }
+          if (isMounted) loadNarrative();
+        })
+        .catch(() => {
+          if (isMounted) loadNarrative();
+        });
+
+      syncLocalWhatWeDoToSupabase()
+        .then((res) => {
+          if (res && res.synced > 0) {
+            showToast(`Synced ${res.synced} service(s) to database!`);
+          }
+          if (isMounted) loadWhatWeDo();
+        })
+        .catch(() => {
+          if (isMounted) loadWhatWeDo();
+        });
     }
     return () => {
       isMounted = false;
@@ -332,7 +435,7 @@ export default function AdminPage({ onNavigate }) {
       }
       handleUpdateShopIndividualItem(id, { image: url, isUploading: false });
       showToast('Item photo attached!');
-    } catch (err) {
+    } catch {
       handleUpdateShopIndividualItem(id, { isUploading: false });
       showToast('Failed to attach item photo', 'error');
     }
@@ -518,6 +621,259 @@ export default function AdminPage({ onNavigate }) {
     showToast('Product visibility updated');
   };
 
+  // =========================================================================
+  // NARRATIVE CAROUSEL HANDLERS
+  // =========================================================================
+  const handleNarrativeFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setNarrativeFile(file);
+      setNarrativePreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleEditNarrative = (item) => {
+    setEditingNarrativeId(item.id);
+    setNewNarrative({
+      title: item.title || '',
+      width: item.width || 425,
+      height: item.height || 350,
+      display_order: item.displayOrder ?? 0,
+      is_published: item.isPublished ?? true
+    });
+    setNarrativePreviewUrl(item.image || item.image_url);
+    setNarrativeFile(null);
+    setShowAddNarrative(true);
+    setTimeout(() => {
+      narrativeFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
+  const handleCancelNarrative = () => {
+    setEditingNarrativeId(null);
+    setNewNarrative({
+      title: '',
+      width: 425,
+      height: 350,
+      display_order: narrativeList.length + 1,
+      is_published: true
+    });
+    setNarrativeFile(null);
+    setNarrativePreviewUrl('');
+    setShowAddNarrative(false);
+  };
+
+  const handleCreateNarrative = async (e) => {
+    e.preventDefault();
+    if (!narrativeFile && !narrativePreviewUrl) {
+      showToast('Please select a slide image to upload', 'error');
+      return;
+    }
+
+    setNarrativeSubmitting(true);
+    try {
+      let imageUrl = narrativePreviewUrl;
+      if (narrativeFile) {
+        try {
+          imageUrl = await uploadImageToStorage('portfolio', narrativeFile);
+        } catch {
+          imageUrl = await fileToBase64(narrativeFile);
+        }
+      }
+
+      if (editingNarrativeId) {
+        const { error } = await updateNarrativeSlide(editingNarrativeId, {
+          ...newNarrative,
+          image_url: imageUrl
+        });
+        if (error) throw error;
+        showToast('Carousel slide updated successfully!');
+      } else {
+        const { error, isLocal } = await createNarrativeSlide({
+          ...newNarrative,
+          image_url: imageUrl
+        });
+
+        if (isLocal) {
+          showToast('Slide saved locally. Please run SQL script to sync globally.', 'warning');
+        } else if (error) {
+          throw error;
+        } else {
+          showToast('Carousel slide uploaded and published successfully!');
+        }
+      }
+
+      handleCancelNarrative();
+      loadNarrative();
+    } catch (err) {
+      showToast(`Error saving slide: ${err.message}`, 'error');
+    } finally {
+      setNarrativeSubmitting(false);
+    }
+  };
+
+  const handleDeleteNarrative = async (id, title) => {
+    if (!window.confirm(`Are you sure you want to delete this slide "${title || 'Untitled'}"?`)) return;
+    setNarrativeList((prev) => prev.filter((item) => item.id !== id));
+    const { error } = await deleteNarrativeSlide(id);
+    if (error) {
+      showToast(`Delete failed: ${error.message || error}`, 'error');
+      loadNarrative();
+    } else {
+      showToast('Deleted carousel slide');
+      loadNarrative();
+    }
+  };
+
+  const handleToggleNarrative = async (id, currentStatus) => {
+    await toggleNarrativeSlidePublished(id, currentStatus);
+    setNarrativeList((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, isPublished: !currentStatus } : item
+      )
+    );
+    showToast('Slide visibility updated');
+  };
+
+  // =========================================================================
+  // WHAT WE DO SERVICES HANDLERS
+  // =========================================================================
+  const handleWhatWeDoFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setWhatWeDoFile(file);
+      setWhatWeDoPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleEditWhatWeDo = (item) => {
+    setEditingWhatWeDoId(item.id);
+    setNewWhatWeDo({
+      name: item.name || '',
+      description: item.description || '',
+      width: item.width || 583,
+      height: item.height || 359,
+      display_order: item.displayOrder ?? 0,
+      is_published: item.isPublished ?? true
+    });
+    setWhatWeDoPreviewUrl(item.image || item.image_url);
+    setWhatWeDoFile(null);
+    setShowAddWhatWeDo(true);
+    setTimeout(() => {
+      whatWeDoFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
+  const handleCancelWhatWeDo = () => {
+    setEditingWhatWeDoId(null);
+    setNewWhatWeDo({
+      name: '',
+      description: '',
+      width: 583,
+      height: 359,
+      display_order: whatWeDoList.length + 1,
+      is_published: true
+    });
+    setWhatWeDoFile(null);
+    setWhatWeDoPreviewUrl('');
+    setShowAddWhatWeDo(false);
+  };
+
+  const handleCreateWhatWeDo = async (e) => {
+    e.preventDefault();
+    if (!newWhatWeDo.name.trim()) {
+      showToast('Service name is required', 'error');
+      return;
+    }
+    if (!newWhatWeDo.description.trim()) {
+      showToast('Service description text is required', 'error');
+      return;
+    }
+    if (!whatWeDoFile && !whatWeDoPreviewUrl) {
+      showToast('Please select a photograph for this service', 'error');
+      return;
+    }
+
+    setWhatWeDoSubmitting(true);
+    try {
+      let imageUrl = whatWeDoPreviewUrl;
+      if (whatWeDoFile) {
+        try {
+          imageUrl = await uploadImageToStorage('portfolio', whatWeDoFile);
+        } catch {
+          imageUrl = await fileToBase64(whatWeDoFile);
+        }
+      }
+
+      if (editingWhatWeDoId) {
+        const { error } = await updateWhatWeDoService(editingWhatWeDoId, {
+          ...newWhatWeDo,
+          image_url: imageUrl
+        });
+        if (error) throw error;
+        showToast('Service updated successfully!');
+      } else {
+        const { error, isLocal } = await createWhatWeDoService({
+          ...newWhatWeDo,
+          image_url: imageUrl
+        });
+
+        if (isLocal) {
+          showToast('Service saved locally. Please run SQL script to sync globally.', 'warning');
+        } else if (error) {
+          throw error;
+        } else {
+          showToast('Service created and published successfully!');
+        }
+      }
+
+      handleCancelWhatWeDo();
+      loadWhatWeDo();
+    } catch (err) {
+      showToast(`Error saving service: ${err.message}`, 'error');
+    } finally {
+      setWhatWeDoSubmitting(false);
+    }
+  };
+
+  const handleDeleteWhatWeDo = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}" from What We Do?`)) return;
+    setWhatWeDoList((prev) => prev.filter((item) => item.id !== id));
+    const { error } = await deleteWhatWeDoService(id);
+    if (error) {
+      showToast(`Delete failed: ${error.message || error}`, 'error');
+      loadWhatWeDo();
+    } else {
+      showToast(`Deleted service "${name}"`);
+      loadWhatWeDo();
+    }
+  };
+
+  const handleToggleWhatWeDo = async (id, currentStatus) => {
+    await toggleWhatWeDoServicePublished(id, currentStatus);
+    setWhatWeDoList((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, isPublished: !currentStatus } : item
+      )
+    );
+    showToast('Service visibility updated');
+  };
+
+  // Filtered lists
+  const filteredNarrative = narrativeList.filter((item) => {
+    if (!narrativeSearch.trim()) return true;
+    return (item.title || '').toLowerCase().includes(narrativeSearch.toLowerCase());
+  });
+
+  const filteredWhatWeDo = whatWeDoList.filter((item) => {
+    if (!whatWeDoSearch.trim()) return true;
+    const query = whatWeDoSearch.toLowerCase();
+    return (
+      (item.name || '').toLowerCase().includes(query) ||
+      (item.description || '').toLowerCase().includes(query)
+    );
+  });
+
   // Filtered portfolio list
   const filteredPortfolio = portfolioList
     .filter((p) =>
@@ -569,6 +925,8 @@ export default function AdminPage({ onNavigate }) {
           });
           loadPortfolio();
           loadShop();
+          loadNarrative();
+          loadWhatWeDo();
           showToast('Welcome back, Administrator');
         }}
         onBackToSite={() => onNavigate('home')}
@@ -638,7 +996,7 @@ export default function AdminPage({ onNavigate }) {
               onClick={() => setActiveTab('portfolio')}
             >
               <ImageIcon size={18} />
-              <span>Portfolio Projects ({portfolioList.length})</span>
+              <span>Portfolio ({portfolioList.length})</span>
             </button>
             <button
               type="button"
@@ -646,7 +1004,23 @@ export default function AdminPage({ onNavigate }) {
               onClick={() => setActiveTab('shop')}
             >
               <ShoppingBag size={18} />
-              <span>Shop Products ({shopList.length})</span>
+              <span>Shop ({shopList.length})</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-tab-btn ${activeTab === 'narrative' ? 'active' : ''}`}
+              onClick={() => setActiveTab('narrative')}
+            >
+              <Sliders size={18} />
+              <span>Carousel ({narrativeList.length})</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-tab-btn ${activeTab === 'what-we-do' ? 'active' : ''}`}
+              onClick={() => setActiveTab('what-we-do')}
+            >
+              <Layers size={18} />
+              <span>What We Do ({whatWeDoList.length})</span>
             </button>
           </div>
 
@@ -668,7 +1042,7 @@ export default function AdminPage({ onNavigate }) {
                   {showAddPortfolio ? 'Cancel Form' : 'Upload Portfolio Project'}
                 </span>
               </button>
-            ) : (
+            ) : activeTab === 'shop' ? (
               <button
                 className="admin-primary-btn"
                 onClick={() => {
@@ -683,6 +1057,40 @@ export default function AdminPage({ onNavigate }) {
                 <Plus size={16} />
                 <span>
                   {showAddShop ? 'Cancel Form' : 'Upload Product to Shop'}
+                </span>
+              </button>
+            ) : activeTab === 'narrative' ? (
+              <button
+                className="admin-primary-btn"
+                onClick={() => {
+                  if (showAddNarrative) {
+                    handleCancelNarrative();
+                  } else {
+                    setEditingNarrativeId(null);
+                    setShowAddNarrative(true);
+                  }
+                }}
+              >
+                <Plus size={16} />
+                <span>
+                  {showAddNarrative ? 'Cancel Form' : 'Add Carousel Slide'}
+                </span>
+              </button>
+            ) : (
+              <button
+                className="admin-primary-btn"
+                onClick={() => {
+                  if (showAddWhatWeDo) {
+                    handleCancelWhatWeDo();
+                  } else {
+                    setEditingWhatWeDoId(null);
+                    setShowAddWhatWeDo(true);
+                  }
+                }}
+              >
+                <Plus size={16} />
+                <span>
+                  {showAddWhatWeDo ? 'Cancel Form' : 'Add What We Do Service'}
                 </span>
               </button>
             )}
@@ -1530,6 +1938,495 @@ export default function AdminPage({ onNavigate }) {
                             }
                             className="admin-delete-btn"
                             title="Delete this product"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* 3. HOMEPAGE CAROUSEL / NARRATIVE SLIDES MANAGEMENT */}
+        {/* ================================================================= */}
+        {activeTab === 'narrative' && (
+          <div className="admin-view-section">
+            {showAddNarrative && (
+              <div className="admin-form-card" ref={narrativeFormRef}>
+                <div className="admin-form-header">
+                  <div className="admin-form-title-wrap">
+                    {editingNarrativeId ? (
+                      <Pencil className="admin-icon-gold" size={24} />
+                    ) : (
+                      <UploadCloud className="admin-icon-gold" size={24} />
+                    )}
+                    <div>
+                      <h2 className="admin-form-heading">
+                        {editingNarrativeId ? 'Edit Carousel Slide' : 'Add New Carousel Slide'}
+                      </h2>
+                      <p className="admin-form-sub">
+                        {editingNarrativeId
+                          ? 'Update slide image, title, or display order in the homepage carousel.'
+                          : 'Upload photography to be displayed in the infinite gliding carousel on the homepage about section.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <form onSubmit={handleCreateNarrative} className="admin-upload-form">
+                  <div className="admin-form-grid">
+                    {/* Image dropzone */}
+                    <div className="admin-dropzone-col">
+                      <label className="admin-field-label">Slide Photograph *</label>
+                      <div
+                        className={`admin-dropzone ${narrativePreviewUrl ? 'has-preview' : ''}`}
+                        onClick={() => narrativeFileRef.current?.click()}
+                      >
+                        <input
+                          type="file"
+                          ref={narrativeFileRef}
+                          onChange={handleNarrativeFileChange}
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                        />
+                        {narrativePreviewUrl ? (
+                          <div className="admin-dropzone-preview">
+                            <img src={narrativePreviewUrl} alt="Slide Preview" />
+                            <div className="admin-dropzone-overlay">
+                              <RefreshCw size={20} />
+                              <span>Click to change photograph</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="admin-dropzone-empty">
+                            <UploadCloud size={44} className="admin-icon-muted" />
+                            <div className="admin-dropzone-txt">
+                              <strong>Click to choose image</strong> or drag and drop
+                            </div>
+                            <span className="admin-dropzone-sub">
+                              Recommended ratio 4:3 or landscape photo
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Meta Fields */}
+                    <div className="admin-fields-col">
+                      <div className="admin-field-group">
+                        <label className="admin-field-label">Slide Title / Alt Description</label>
+                        <input
+                          type="text"
+                          value={newNarrative.title}
+                          onChange={(e) =>
+                            setNewNarrative({ ...newNarrative, title: e.target.value })
+                          }
+                          placeholder="e.g. Bespoke Architectural Detail"
+                          className="admin-input-text"
+                        />
+                      </div>
+
+                      <div className="admin-fields-row">
+                        <div className="admin-field-group">
+                          <label className="admin-field-label">Display Width (px)</label>
+                          <input
+                            type="number"
+                            value={newNarrative.width}
+                            onChange={(e) =>
+                              setNewNarrative({ ...newNarrative, width: Number(e.target.value) || 425 })
+                            }
+                            placeholder="425"
+                            className="admin-input-text"
+                          />
+                        </div>
+
+                        <div className="admin-field-group">
+                          <label className="admin-field-label">Display Height (px)</label>
+                          <input
+                            type="number"
+                            value={newNarrative.height}
+                            onChange={(e) =>
+                              setNewNarrative({ ...newNarrative, height: Number(e.target.value) || 350 })
+                            }
+                            placeholder="350"
+                            className="admin-input-text"
+                          />
+                        </div>
+
+                        <div className="admin-field-group">
+                          <label className="admin-field-label">Display Order</label>
+                          <input
+                            type="number"
+                            value={newNarrative.display_order}
+                            onChange={(e) =>
+                              setNewNarrative({
+                                ...newNarrative,
+                                display_order: Number(e.target.value) || 0
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-form-actions-bar">
+                        <button
+                          type="button"
+                          onClick={handleCancelNarrative}
+                          className="admin-secondary-btn"
+                          disabled={narrativeSubmitting}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="admin-submit-btn"
+                          disabled={narrativeSubmitting}
+                        >
+                          {narrativeSubmitting ? (
+                            <>
+                              <RefreshCw size={16} className="spin-animate" />
+                              <span>Saving...</span>
+                            </>
+                          ) : editingNarrativeId ? (
+                            <>
+                              <CheckCircle2 size={16} />
+                              <span>Save Changes</span>
+                            </>
+                          ) : (
+                            <>
+                              <UploadCloud size={16} />
+                              <span>Upload Slide</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Search Bar */}
+            <div className="admin-filter-bar">
+              <div className="admin-search-wrap" style={{ maxWidth: '420px', width: '100%' }}>
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search slides by title..."
+                  value={narrativeSearch}
+                  onChange={(e) => setNarrativeSearch(e.target.value)}
+                  className="admin-search-input"
+                />
+              </div>
+            </div>
+
+            {/* Slides Grid */}
+            {narrativeLoading ? (
+              <div className="admin-loading-box">
+                <RefreshCw size={24} className="spin-animate" />
+                <span>Loading carousel slides...</span>
+              </div>
+            ) : filteredNarrative.length === 0 ? (
+              <div className="admin-empty-box">
+                <Sliders size={48} className="admin-icon-muted" />
+                <h3>No carousel slides found</h3>
+                <p>Click "Add Carousel Slide" above to upload photos to the homepage carousel.</p>
+              </div>
+            ) : (
+              <div className="admin-items-grid">
+                {filteredNarrative.map((item) => (
+                  <div key={item.id} className="admin-item-card">
+                    <div className="admin-card-thumb-wrap">
+                      <img src={item.image || item.image_url} alt={item.title} loading="lazy" />
+                      <button
+                        className={`admin-status-badge ${
+                          item.isPublished ? 'published' : 'draft'
+                        }`}
+                        onClick={() =>
+                          handleToggleNarrative(item.id, item.isPublished)
+                        }
+                        title="Click to toggle publish status"
+                      >
+                        {item.isPublished ? (
+                          <>
+                            <Eye size={12} />
+                            <span>Live</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff size={12} />
+                            <span>Draft</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="admin-card-body">
+                      <h3 className="admin-card-title">{item.title || 'Architectural Detail'}</h3>
+                      <p className="admin-card-subtitle">{item.width} × {item.height} px</p>
+
+                      <div className="admin-card-meta-row">
+                        <span className="admin-order-tag">Order #{item.displayOrder}</span>
+                        <div className="admin-card-actions">
+                          <button
+                            onClick={() => handleEditNarrative(item)}
+                            className="admin-edit-btn"
+                            title="Edit this slide"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeleteNarrative(item.id, item.title)
+                            }
+                            className="admin-delete-btn"
+                            title="Delete this slide"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* 4. WHAT WE DO SERVICES MANAGEMENT */}
+        {/* ================================================================= */}
+        {activeTab === 'what-we-do' && (
+          <div className="admin-view-section">
+            {showAddWhatWeDo && (
+              <div className="admin-form-card" ref={whatWeDoFormRef}>
+                <div className="admin-form-header">
+                  <div className="admin-form-title-wrap">
+                    {editingWhatWeDoId ? (
+                      <Pencil className="admin-icon-gold" size={24} />
+                    ) : (
+                      <UploadCloud className="admin-icon-gold" size={24} />
+                    )}
+                    <div>
+                      <h2 className="admin-form-heading">
+                        {editingWhatWeDoId ? 'Edit Service' : 'Add New Service to What We Do'}
+                      </h2>
+                      <p className="admin-form-sub">
+                        {editingWhatWeDoId
+                          ? 'Update service name, description text, or replace the showcased photograph.'
+                          : 'Add a new interior service to the homepage What We Do section. Appears as an interactive tab with showcased photography and description.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <form onSubmit={handleCreateWhatWeDo} className="admin-upload-form">
+                  <div className="admin-form-grid">
+                    {/* Image dropzone */}
+                    <div className="admin-dropzone-col">
+                      <label className="admin-field-label">Service Showcase Photograph *</label>
+                      <div
+                        className={`admin-dropzone ${whatWeDoPreviewUrl ? 'has-preview' : ''}`}
+                        onClick={() => whatWeDoFileRef.current?.click()}
+                      >
+                        <input
+                          type="file"
+                          ref={whatWeDoFileRef}
+                          onChange={handleWhatWeDoFileChange}
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                        />
+                        {whatWeDoPreviewUrl ? (
+                          <div className="admin-dropzone-preview">
+                            <img src={whatWeDoPreviewUrl} alt="Service Preview" />
+                            <div className="admin-dropzone-overlay">
+                              <RefreshCw size={20} />
+                              <span>Click to change photograph</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="admin-dropzone-empty">
+                            <UploadCloud size={44} className="admin-icon-muted" />
+                            <div className="admin-dropzone-txt">
+                              <strong>Click to choose image</strong> or drag and drop
+                            </div>
+                            <span className="admin-dropzone-sub">
+                              Recommended 583 × 359 px landscape photo
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Meta Fields */}
+                    <div className="admin-fields-col">
+                      <div className="admin-field-group">
+                        <label className="admin-field-label">Service Name (Tab Title) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={newWhatWeDo.name}
+                          onChange={(e) =>
+                            setNewWhatWeDo({ ...newWhatWeDo, name: e.target.value })
+                          }
+                          placeholder="e.g. Modular Kitchen, Bedroom, Office Space"
+                          className="admin-input-text"
+                        />
+                      </div>
+
+                      <div className="admin-field-group">
+                        <label className="admin-field-label">Service Description (Homepage Text) *</label>
+                        <textarea
+                          rows={4}
+                          required
+                          value={newWhatWeDo.description}
+                          onChange={(e) =>
+                            setNewWhatWeDo({ ...newWhatWeDo, description: e.target.value })
+                          }
+                          placeholder="Detailed description of the service displayed on the right side of the What We Do section..."
+                          className="admin-textarea"
+                        />
+                      </div>
+
+                      <div className="admin-fields-row">
+                        <div className="admin-field-group">
+                          <label className="admin-field-label">Display Order</label>
+                          <input
+                            type="number"
+                            value={newWhatWeDo.display_order}
+                            onChange={(e) =>
+                              setNewWhatWeDo({
+                                ...newWhatWeDo,
+                                display_order: Number(e.target.value) || 0
+                              })
+                            }
+                            className="admin-input-text"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-form-actions-bar">
+                        <button
+                          type="button"
+                          onClick={handleCancelWhatWeDo}
+                          className="admin-secondary-btn"
+                          disabled={whatWeDoSubmitting}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="admin-submit-btn"
+                          disabled={whatWeDoSubmitting}
+                        >
+                          {whatWeDoSubmitting ? (
+                            <>
+                              <RefreshCw size={16} className="spin-animate" />
+                              <span>Saving...</span>
+                            </>
+                          ) : editingWhatWeDoId ? (
+                            <>
+                              <CheckCircle2 size={16} />
+                              <span>Save Changes</span>
+                            </>
+                          ) : (
+                            <>
+                              <UploadCloud size={16} />
+                              <span>Save Service</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Search Bar */}
+            <div className="admin-filter-bar">
+              <div className="admin-search-wrap" style={{ maxWidth: '420px', width: '100%' }}>
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search services by name or description..."
+                  value={whatWeDoSearch}
+                  onChange={(e) => setWhatWeDoSearch(e.target.value)}
+                  className="admin-search-input"
+                />
+              </div>
+            </div>
+
+            {/* Services Grid */}
+            {whatWeDoLoading ? (
+              <div className="admin-loading-box">
+                <RefreshCw size={24} className="spin-animate" />
+                <span>Loading services...</span>
+              </div>
+            ) : filteredWhatWeDo.length === 0 ? (
+              <div className="admin-empty-box">
+                <Layers size={48} className="admin-icon-muted" />
+                <h3>No services found</h3>
+                <p>Click "Add Service Item" above to add services to the What We Do section.</p>
+              </div>
+            ) : (
+              <div className="admin-items-grid">
+                {filteredWhatWeDo.map((item) => (
+                  <div key={item.id} className="admin-item-card">
+                    <div className="admin-card-thumb-wrap">
+                      <img src={item.image || item.image_url} alt={item.name} loading="lazy" />
+                      <button
+                        className={`admin-status-badge ${
+                          item.isPublished ? 'published' : 'draft'
+                        }`}
+                        onClick={() =>
+                          handleToggleWhatWeDo(item.id, item.isPublished)
+                        }
+                        title="Click to toggle publish status"
+                      >
+                        {item.isPublished ? (
+                          <>
+                            <Eye size={12} />
+                            <span>Live</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff size={12} />
+                            <span>Draft</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="admin-card-body">
+                      <h3 className="admin-card-title">{item.name}</h3>
+                      <p className="admin-card-subtitle" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {item.description}
+                      </p>
+
+                      <div className="admin-card-meta-row">
+                        <span className="admin-order-tag">Order #{item.displayOrder}</span>
+                        <div className="admin-card-actions">
+                          <button
+                            onClick={() => handleEditWhatWeDo(item)}
+                            className="admin-edit-btn"
+                            title="Edit this service"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeleteWhatWeDo(item.id, item.name)
+                            }
+                            className="admin-delete-btn"
+                            title="Delete this service"
                           >
                             <Trash2 size={15} />
                           </button>

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { homeData } from '../data/homeData';
+import { getNarrativeSlides } from '../utils/dataService';
 
 const REPEAT_SETS = 4;
 const SCROLL_SPEED = 40; // Pixels per second for smooth, luxurious glide
@@ -7,6 +8,7 @@ const SCROLL_SPEED = 40; // Pixels per second for smooth, luxurious glide
 export default function NarrativeSlider({ onLearnMore }) {
   const galleryRef = useRef(null);
   const { narrative } = homeData;
+  const [slides, setSlides] = useState(narrative.slides || []);
 
   const [isDragging, setIsDragging] = useState(false);
   const isHoveredRef = useRef(false);
@@ -18,6 +20,26 @@ export default function NarrativeSlider({ onLearnMore }) {
   const lastTimeRef = useRef(null);
   const animFrameIdRef = useRef(null);
   const resumeTimeoutRef = useRef(null);
+
+  // Fetch admin-uploaded carousel slides
+  useEffect(() => {
+    let mounted = true;
+    getNarrativeSlides()
+      .then((items) => {
+        if (mounted && items && items.length > 0) {
+          const published = items.filter((s) => s.isPublished !== false);
+          if (published.length > 0) {
+            setSlides(published);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load narrative slides from data service:', err);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Pause auto-scroll temporarily (e.g. after user clicks buttons or finishes drag)
   const pauseTemporarily = useCallback((durationMs = 2500) => {
@@ -287,17 +309,17 @@ export default function NarrativeSlider({ onLearnMore }) {
         onTouchEnd={handleTouchEnd}
       >
         {Array.from({ length: REPEAT_SETS }).flatMap((_, setIdx) =>
-          narrative.slides.map((slide) => (
+          slides.map((slide) => (
             <div
               key={`${slide.id}-set-${setIdx}`}
               className="narrative-gallery-card"
-              style={{ width: `${slide.width}px`, height: `${slide.height}px` }}
+              style={{ width: `${slide.width || 425}px`, height: `${slide.height || 350}px` }}
             >
               <img
-                src={slide.image}
-                alt={slide.title}
-                width={slide.width}
-                height={slide.height}
+                src={slide.image || slide.image_url}
+                alt={slide.title || 'Architectural Detail'}
+                width={slide.width || 425}
+                height={slide.height || 350}
                 loading={setIdx <= 1 ? 'eager' : 'lazy'}
                 draggable={false}
               />
